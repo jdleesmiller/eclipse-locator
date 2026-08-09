@@ -289,22 +289,17 @@ async function loadTerrain() {
 }
 
 function buildArTargets() {
-  const selectedDate = new Date(dateTimeInput.value);
-  const phases = ECLIPSE_PHASES.map((phase) => ({
+  return ECLIPSE_PHASES.map((phase) => ({
     ...phase,
     ...sunPositionAt(new Date(phase.time)),
     timeLabel: phase.displayTime || new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Madrid" }).format(new Date(phase.time)),
   }));
-  return [
-    ...phases,
-    { label: "Selected time", selected: true, ...sunPositionAt(selectedDate), timeLabel: dateTimeInput.value.slice(11, 16) },
-  ];
 }
 
 function createArMarkers() {
   state.ar.targets = buildArTargets();
   arMarkers.innerHTML = state.ar.targets.map((target, index) => {
-    const classes = ["ar-marker", target.totality ? "totality" : "", target.selected ? "selected" : ""].filter(Boolean).join(" ");
+    const classes = ["ar-marker", target.totality ? "totality" : ""].filter(Boolean).join(" ");
     return `<div class="${classes}" data-target="${index}"><div class="ar-marker-dot"></div><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel} · ${target.azimuth.toFixed(1)}° / ${target.elevation.toFixed(1)}°</small></div></div>`;
   }).join("");
 }
@@ -320,9 +315,8 @@ function renderArOverlay() {
   const pitch = state.ar.rawPitch + state.ar.pitchOffset;
   const horizontalFov = state.ar.horizontalFov;
   const verticalFov = state.ar.verticalFov;
-  const selected = state.ar.targets.find((target) => target.selected);
   const screenBounds = { left: 0.08, right: 0.92, top: 0.12, bottom: 0.68 };
-  let selectedScreenPosition = null;
+  let totalityScreenPosition = null;
 
   arMarkers.querySelectorAll(".ar-marker").forEach((marker) => {
     const target = state.ar.targets[Number(marker.dataset.target)];
@@ -336,16 +330,16 @@ function renderArOverlay() {
     marker.style.left = `${screenX * 100}%`;
     marker.style.top = `${screenY * 100}%`;
     marker.style.opacity = visible ? "1" : "0";
-    if (target.selected) selectedScreenPosition = { x: screenX, y: screenY, visible, bearingDelta, elevationDelta };
+    if (target.totality) totalityScreenPosition = { x: screenX, y: screenY, visible, bearingDelta, elevationDelta };
   });
 
-  if (!selectedScreenPosition || selectedScreenPosition.visible || state.ar.calibrationStep !== null) {
+  if (!totalityScreenPosition || totalityScreenPosition.visible || state.ar.calibrationStep !== null) {
     arOffscreenArrow.hidden = true;
     return;
   }
   const arrowOrigin = { x: 0.5, y: 0.42 };
-  const dx = selectedScreenPosition.bearingDelta / horizontalFov;
-  const dy = -selectedScreenPosition.elevationDelta / verticalFov;
+  const dx = totalityScreenPosition.bearingDelta / horizontalFov;
+  const dy = -totalityScreenPosition.elevationDelta / verticalFov;
   const horizontalScale = Math.abs(dx) < 0.0001 ? Infinity : dx > 0 ? (screenBounds.right - arrowOrigin.x) / dx : (screenBounds.left - arrowOrigin.x) / dx;
   const verticalScale = Math.abs(dy) < 0.0001 ? Infinity : dy > 0 ? (screenBounds.bottom - arrowOrigin.y) / dy : (screenBounds.top - arrowOrigin.y) / dy;
   const scale = Math.max(0, Math.min(horizontalScale, verticalScale));

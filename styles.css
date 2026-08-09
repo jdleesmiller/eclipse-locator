@@ -114,11 +114,9 @@ button.active { background: #f47d4b; }
 .ar-marker { position: absolute; min-width: 82px; transform: translate(-50%, -50%); text-align: center; transition: opacity .12s; }
 .ar-marker-dot { width: 16px; height: 16px; margin: 0 auto 4px; border: 3px solid #fff; border-radius: 50%; background: #ef8650; box-shadow: 0 0 0 3px rgba(239,134,80,.35), 0 2px 7px #000; }
 .ar-marker.totality .ar-marker-dot { width: 24px; height: 24px; border-color: var(--accent); background: #101820; box-shadow: 0 0 0 5px rgba(255,207,74,.32), 0 0 18px var(--accent); }
-.ar-marker.selected .ar-marker-dot { border-color: #77d7ff; background: #086f9f; }
 .ar-marker b, .ar-marker small { display: block; color: white; font-size: 10px; text-shadow: 0 1px 4px #000, 1px 0 3px #000; }
 .ar-marker small { color: #dce8f1; font-size: 9px; }
 .ar-marker.totality .ar-marker-label { transform: translateY(-46px); }
-.ar-marker.selected .ar-marker-label { transform: translateY(7px); }
 .ar-offscreen-arrow { position: absolute; z-index: 3; min-width: 96px; transform: translate(-50%, -50%); text-align: center; filter: drop-shadow(0 2px 4px #000); }
 .ar-offscreen-arrow span { display: block; color: var(--accent); font-size: 34px; line-height: 1; transform: rotate(var(--arrow-angle)); }
 .ar-offscreen-arrow b { display: block; margin-top: 3px; color: white; font-size: 10px; text-shadow: 0 1px 4px #000; }
