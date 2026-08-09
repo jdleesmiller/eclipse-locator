@@ -18,16 +18,17 @@ To view it on an iPhone on the same Wi-Fi network, find the computer's local IP 
 
 - Geolocation requires user permission and, on normal hostnames/IP addresses, a secure HTTPS context. If it fails, the app falls back to central Gijón; the observer marker can also be dragged or positioned with **Set observer on map**.
 - The selected date/time is interpreted in the browser/device's current time zone. Set an iPhone to Spain time when using the 20:27 default, or adjust the input for its active time zone.
-- Device orientation and camera access are not used in this version. On iOS they require HTTPS and explicit user gestures/permission; compass readings also require calibration and are not precise enough to be the only alignment method.
+- The optional AR camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping the **AR** button. Compass readings can drift and the browser does not report the camera's exact field of view, so use the calibration and camera-width controls rather than treating marker placement as survey-grade.
+- Never look directly at the uneclipsed or partially eclipsed Sun without suitable solar viewing protection. Use an appropriate solar filter over the camera lens during partial phases; the phone screen is not eye protection.
 
 ## Hosting
 
 The repository can be published directly with GitHub Pages because all files are static. No Google Maps key is needed.
 
-## Future terrain and AR work
+## Terrain and experimental AR
 
 The terrain profile samples 100 points from the Open-Meteo Elevation API. The first 5 km is sampled about every 91 m to match the useful resolution of the 90 m Copernicus digital elevation model; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. The sightline comparison includes observer elevation, a nominal 1.7 m eye height and Earth curvature, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
 
 Elevation data: [Open-Meteo](https://open-meteo.com/en/docs/elevation-api), using the Copernicus DEM.
 
-A web-based AR mode is feasible in a limited form: use `getUserMedia()` for the camera, geolocation, and `DeviceOrientationEvent` for heading/pitch, then draw eclipse waypoints over the video. iOS requires HTTPS and user-granted camera/orientation permissions. Sensor heading and pitch drift can make overlays visibly inaccurate, so a practical version should include horizon/landmark calibration. WebXR immersive AR support on iPhone Safari is limited; a camera-video overlay is the more portable web approach.
+The experimental AR mode uses `getUserMedia()` for the rear camera and `DeviceOrientationEvent` for heading and pitch. It overlays the selected time plus approximate Gijón contact times for the partial and total phases. The hard-coded contact times are local circumstances for central Gijón; the Sun positions are recalculated for the chosen observer location. This is a directional planning aid, not a precision eclipse-contact calculator. WebXR immersive AR support on iPhone Safari remains limited, so a camera-video overlay is the more portable approach.

@@ -19,9 +19,10 @@
           <p class="eyebrow">12 AUGUST 2026</p>
           <h1>Eclipse sightline</h1>
         </div>
-        <button id="locate-button" class="icon-button" type="button" aria-label="Use my location" title="Use my location">
-          <span aria-hidden="true">⌖</span>
-        </button>
+        <div class="top-actions">
+          <button id="ar-button" class="icon-button" type="button" aria-label="Open AR sky view" title="Open AR sky view"><span aria-hidden="true">AR</span></button>
+          <button id="locate-button" class="icon-button" type="button" aria-label="Use my location" title="Use my location"><span aria-hidden="true">⌖</span></button>
+        </div>
       </header>
 
       <section class="panel" aria-label="Eclipse controls and results">
@@ -75,6 +76,27 @@
 
         <p id="status" class="status">Finding your location…</p>
         <p class="hint">Tap the map to inspect the sightline. Drag the observer marker to try another viewpoint.</p>
+      </section>
+
+      <section id="ar-view" class="ar-view" hidden aria-label="Augmented reality eclipse view">
+        <video id="ar-video" autoplay muted playsinline></video>
+        <div class="ar-shade"></div>
+        <button id="ar-close" class="ar-close" type="button" aria-label="Close AR view">×</button>
+        <div id="ar-stage" class="ar-stage">
+          <div class="ar-reticle" aria-hidden="true"></div>
+          <div id="ar-markers"></div>
+          <div id="ar-direction" class="ar-direction">Waiting for orientation…</div>
+        </div>
+        <div class="ar-controls">
+          <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
+          <p id="ar-status">Requesting camera and orientation access…</p>
+          <div class="ar-control-row">
+            <button id="ar-calibrate" type="button">Calibrate centre to selected time</button>
+            <label for="ar-fov">Camera width <span id="ar-fov-value">60°</span></label>
+            <input id="ar-fov" type="range" min="40" max="90" value="60" step="1" />
+          </div>
+          <p class="ar-help">Hold the phone upright in portrait. To calibrate, first aim the centre at the selected-time direction using a known landmark or trusted compass. Markers are estimates; sensor drift can move them noticeably.</p>
+        </div>
       </section>
     </main>
 
