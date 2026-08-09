@@ -72,7 +72,7 @@ const terrainNote = document.querySelector("#terrain-note");
 const arView = document.querySelector("#ar-view");
 const arVideo = document.querySelector("#ar-video");
 const arMarkers = document.querySelector("#ar-markers");
-const arDirection = document.querySelector("#ar-direction");
+const arOffscreenArrow = document.querySelector("#ar-offscreen-arrow");
 const arStatus = document.querySelector("#ar-status");
 const arFov = document.querySelector("#ar-fov");
 const arFovValue = document.querySelector("#ar-fov-value");
@@ -312,7 +312,7 @@ function createArMarkers() {
 function renderArOverlay() {
   if (!state.ar.active) return;
   if (state.ar.rawHeading === null || state.ar.rawPitch === null) {
-    arDirection.textContent = "Move the phone gently while orientation initializes…";
+    arOffscreenArrow.hidden = true;
     return;
   }
 
@@ -321,11 +321,8 @@ function renderArOverlay() {
   const horizontalFov = state.ar.horizontalFov;
   const verticalFov = state.ar.verticalFov;
   const selected = state.ar.targets.find((target) => target.selected);
-  const selectedBearingDelta = signedAngleDifference(selected.azimuth, heading);
-  const selectedElevationDelta = selected.elevation - pitch;
-  const turn = Math.abs(selectedBearingDelta) < 2 ? "bearing aligned" : `turn ${Math.abs(selectedBearingDelta).toFixed(0)}° ${selectedBearingDelta > 0 ? "right" : "left"}`;
-  const tilt = Math.abs(selectedElevationDelta) < 2 ? "height aligned" : `tilt ${Math.abs(selectedElevationDelta).toFixed(0)}° ${selectedElevationDelta > 0 ? "up" : "down"}`;
-  arDirection.textContent = `Camera ${heading.toFixed(0)}° ${compassPoint(heading)} · ${pitch.toFixed(0)}° elevation — ${turn}, ${tilt}`;
+  const screenBounds = { left: 0.08, right: 0.92, top: 0.12, bottom: 0.68 };
+  let selectedScreenPosition = null;
 
   arMarkers.querySelectorAll(".ar-marker").forEach((marker) => {
     const target = state.ar.targets[Number(marker.dataset.target)];
@@ -333,11 +330,29 @@ function renderArOverlay() {
     const elevationDelta = target.elevation - pitch;
     const xOffset = Math.tan(toRadians(bearingDelta)) / (2 * Math.tan(toRadians(horizontalFov / 2)));
     const yOffset = Math.tan(toRadians(elevationDelta)) / (2 * Math.tan(toRadians(verticalFov / 2)));
-    const visible = Math.abs(xOffset) <= 0.62 && Math.abs(yOffset) <= 0.62 && Math.abs(bearingDelta) < 80 && Math.abs(elevationDelta) < 80;
-    marker.style.left = `${50 + xOffset * 100}%`;
-    marker.style.top = `${50 - yOffset * 100}%`;
+    const screenX = 0.5 + xOffset;
+    const screenY = 0.5 - yOffset;
+    const visible = screenX >= screenBounds.left && screenX <= screenBounds.right && screenY >= screenBounds.top && screenY <= screenBounds.bottom && Math.abs(bearingDelta) < 80 && Math.abs(elevationDelta) < 80;
+    marker.style.left = `${screenX * 100}%`;
+    marker.style.top = `${screenY * 100}%`;
     marker.style.opacity = visible ? "1" : "0";
+    if (target.selected) selectedScreenPosition = { x: screenX, y: screenY, visible, bearingDelta, elevationDelta };
   });
+
+  if (!selectedScreenPosition || selectedScreenPosition.visible || state.ar.calibrationStep !== null) {
+    arOffscreenArrow.hidden = true;
+    return;
+  }
+  const arrowOrigin = { x: 0.5, y: 0.42 };
+  const dx = selectedScreenPosition.bearingDelta / horizontalFov;
+  const dy = -selectedScreenPosition.elevationDelta / verticalFov;
+  const horizontalScale = Math.abs(dx) < 0.0001 ? Infinity : dx > 0 ? (screenBounds.right - arrowOrigin.x) / dx : (screenBounds.left - arrowOrigin.x) / dx;
+  const verticalScale = Math.abs(dy) < 0.0001 ? Infinity : dy > 0 ? (screenBounds.bottom - arrowOrigin.y) / dy : (screenBounds.top - arrowOrigin.y) / dy;
+  const scale = Math.max(0, Math.min(horizontalScale, verticalScale));
+  arOffscreenArrow.style.left = `${(arrowOrigin.x + dx * scale) * 100}%`;
+  arOffscreenArrow.style.top = `${(arrowOrigin.y + dy * scale) * 100}%`;
+  arOffscreenArrow.style.setProperty("--arrow-angle", `${toDegrees(Math.atan2(dy, dx))}deg`);
+  arOffscreenArrow.hidden = false;
 }
 
 function handleOrientation(event) {

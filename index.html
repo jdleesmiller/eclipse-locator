@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260809-ar3" />
+    <link rel="stylesheet" href="styles.css?v=20260809-ar4" />
   </head>
   <body>
     <main>
@@ -83,10 +83,9 @@
         <div class="ar-shade"></div>
         <button id="ar-close" class="ar-close" type="button" aria-label="Close AR view">×</button>
         <div id="ar-stage" class="ar-stage">
-          <div class="ar-reticle" aria-hidden="true"></div>
           <div id="ar-calibration-target" class="ar-calibration-target" hidden aria-hidden="true"></div>
           <div id="ar-markers"></div>
-          <div id="ar-direction" class="ar-direction">Waiting for orientation…</div>
+          <div id="ar-offscreen-arrow" class="ar-offscreen-arrow" hidden><span aria-hidden="true">➤</span><b>Selected-time Sun</b></div>
         </div>
         <div class="ar-controls">
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
@@ -118,6 +117,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
-    <script src="app.js?v=20260809-ar3"></script>
+    <script src="app.js?v=20260809-ar4"></script>
   </body>
 </html>
