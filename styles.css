@@ -111,6 +111,10 @@ button.active { background: #f47d4b; }
 .ar-reticle::before, .ar-reticle::after { content: ""; position: absolute; top: 50%; left: 50%; background: rgba(255,255,255,.7); transform: translate(-50%, -50%); }
 .ar-reticle::before { width: 48px; height: 1px; }
 .ar-reticle::after { width: 1px; height: 48px; }
+.ar-calibration-target { position: absolute; z-index: 2; width: 48px; height: 48px; border: 3px solid #77d7ff; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 5px rgba(119,215,255,.22), 0 0 18px rgba(119,215,255,.8); }
+.ar-calibration-target::before, .ar-calibration-target::after { content: ""; position: absolute; top: 50%; left: 50%; background: #77d7ff; transform: translate(-50%, -50%); }
+.ar-calibration-target::before { width: 62px; height: 1px; }
+.ar-calibration-target::after { width: 1px; height: 62px; }
 .ar-marker { position: absolute; min-width: 82px; transform: translate(-50%, -50%); text-align: center; transition: opacity .12s; }
 .ar-marker-dot { width: 16px; height: 16px; margin: 0 auto 4px; border: 3px solid #fff; border-radius: 50%; background: #ef8650; box-shadow: 0 0 0 3px rgba(239,134,80,.35), 0 2px 7px #000; }
 .ar-marker.totality .ar-marker-dot { width: 24px; height: 24px; border-color: var(--accent); background: #101820; box-shadow: 0 0 0 5px rgba(255,207,74,.32), 0 0 18px var(--accent); }
@@ -128,6 +132,13 @@ button.active { background: #f47d4b; }
 .ar-control-row label { display: flex; justify-content: space-between; font-size: 10px; color: #d1dee8; }
 .ar-control-row label span { display: inline; margin: 0; color: var(--accent); }
 .ar-control-row input { width: 100%; min-width: 0; padding: 0; accent-color: var(--accent); }
+.saved-calibrations { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-top: 8px; }
+.saved-calibrations select { min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: #10253a; color: var(--ink); font-size: 10px; }
+.saved-calibrations button { min-height: 34px; padding: 5px 9px; font-size: 10px; }
+.ar-calibration-panel p { margin: 7px 0 9px; color: white; font-size: 12px; line-height: 1.35; }
+.ar-calibration-panel > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.ar-calibration-panel button { min-height: 40px; padding: 6px 10px; }
+.ar-view.calibrating .ar-reticle, .ar-view.calibrating .ar-direction { display: none; }
 
 @media (min-width: 760px) {
   #map { inset: 0; }

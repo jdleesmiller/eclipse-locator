@@ -12,6 +12,14 @@ const ECLIPSE_PHASES = [
   { label: "Totality 20:26:42–20:28:27", time: "2026-08-12T20:27:35+02:00", displayTime: "maximum 20:27:35", totality: true },
   { label: "Partial ends", time: "2026-08-12T21:20:39+02:00" },
 ];
+const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
+const CALIBRATION_POINTS = [
+  { name: "centre", x: 0.5, y: 0.5 },
+  { name: "left target", x: 0.2, y: 0.5 },
+  { name: "right target", x: 0.8, y: 0.5 },
+  { name: "upper target", x: 0.5, y: 0.27 },
+  { name: "lower target", x: 0.5, y: 0.63 },
+];
 
 const state = {
   observer: { ...GIJON },
@@ -30,7 +38,11 @@ const state = {
     headingOffset: 0,
     pitchOffset: 0,
     horizontalFov: 60,
+    verticalFov: 80,
     targets: [],
+    orientationHistory: [],
+    calibrationStep: null,
+    calibrationSamples: [],
   },
 };
 
@@ -64,6 +76,11 @@ const arDirection = document.querySelector("#ar-direction");
 const arStatus = document.querySelector("#ar-status");
 const arFov = document.querySelector("#ar-fov");
 const arFovValue = document.querySelector("#ar-fov-value");
+const arMainControls = document.querySelector("#ar-main-controls");
+const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
+const arCalibrationTarget = document.querySelector("#ar-calibration-target");
+const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
+const arCalibrationSelect = document.querySelector("#ar-calibration-select");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -107,6 +124,44 @@ function sunPositionAt(date) {
     azimuth: normalizeAngle(toDegrees(sun.azimuth) + 180),
     elevation: toDegrees(sun.altitude),
   };
+}
+
+function loadSavedCalibrations() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CALIBRATION_STORAGE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeSavedCalibrations(calibrations) {
+  try {
+    localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrations.slice(0, 20)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshCalibrationSelect(selectedId = "") {
+  const calibrations = loadSavedCalibrations();
+  arCalibrationSelect.innerHTML = '<option value="">Saved calibrations…</option>' + calibrations.map((calibration) => {
+    const date = new Date(calibration.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+    return `<option value="${calibration.id}">${date} · ${calibration.horizontalFov.toFixed(1)}° × ${calibration.verticalFov.toFixed(1)}° · error ${calibration.rmsError.toFixed(1)}°</option>`;
+  }).join("");
+  arCalibrationSelect.value = selectedId;
+}
+
+function applyCalibration(calibration) {
+  state.ar.headingOffset = calibration.headingOffset;
+  state.ar.pitchOffset = calibration.pitchOffset;
+  state.ar.horizontalFov = calibration.horizontalFov;
+  state.ar.verticalFov = calibration.verticalFov;
+  arFov.value = String(Math.round(calibration.horizontalFov));
+  arFovValue.textContent = `${calibration.horizontalFov.toFixed(1)}°`;
+  arStatus.textContent = `Applied saved calibration (${calibration.rmsError.toFixed(1)}° fit error). Recalibrate if the magnetic environment has changed.`;
+  renderArOverlay();
 }
 
 function lineOfSightHeightKm(distanceKm) {
@@ -263,8 +318,7 @@ function renderArOverlay() {
   const heading = normalizeAngle(state.ar.rawHeading + state.ar.headingOffset);
   const pitch = state.ar.rawPitch + state.ar.pitchOffset;
   const horizontalFov = state.ar.horizontalFov;
-  const stageRatio = arView.clientHeight / Math.max(arView.clientWidth, 1);
-  const verticalFov = toDegrees(2 * Math.atan(Math.tan(toRadians(horizontalFov / 2)) * stageRatio));
+  const verticalFov = state.ar.verticalFov;
   const selected = state.ar.targets.find((target) => target.selected);
   const selectedBearingDelta = signedAngleDifference(selected.azimuth, heading);
   const selectedElevationDelta = selected.elevation - pitch;
@@ -276,9 +330,11 @@ function renderArOverlay() {
     const target = state.ar.targets[Number(marker.dataset.target)];
     const bearingDelta = signedAngleDifference(target.azimuth, heading);
     const elevationDelta = target.elevation - pitch;
-    const visible = Math.abs(bearingDelta) <= horizontalFov * 0.62 && Math.abs(elevationDelta) <= verticalFov * 0.62;
-    marker.style.left = `${50 + bearingDelta / horizontalFov * 100}%`;
-    marker.style.top = `${50 - elevationDelta / verticalFov * 100}%`;
+    const xOffset = Math.tan(toRadians(bearingDelta)) / (2 * Math.tan(toRadians(horizontalFov / 2)));
+    const yOffset = Math.tan(toRadians(elevationDelta)) / (2 * Math.tan(toRadians(verticalFov / 2)));
+    const visible = Math.abs(xOffset) <= 0.62 && Math.abs(yOffset) <= 0.62 && Math.abs(bearingDelta) < 80 && Math.abs(elevationDelta) < 80;
+    marker.style.left = `${50 + xOffset * 100}%`;
+    marker.style.top = `${50 - yOffset * 100}%`;
     marker.style.opacity = visible ? "1" : "0";
   });
 }
@@ -293,6 +349,11 @@ function handleOrientation(event) {
   }
   if (heading !== null) state.ar.rawHeading = heading;
   if (Number.isFinite(event.beta)) state.ar.rawPitch = event.beta - 90;
+  if (state.ar.rawHeading !== null && state.ar.rawPitch !== null) {
+    const now = performance.now();
+    state.ar.orientationHistory.push({ time: now, heading: state.ar.rawHeading, pitch: state.ar.rawPitch });
+    state.ar.orientationHistory = state.ar.orientationHistory.filter((sample) => now - sample.time <= 1200);
+  }
   renderArOverlay();
 }
 
@@ -314,6 +375,7 @@ async function openArView() {
   state.ar.pitchOffset = 0;
   arView.hidden = false;
   createArMarkers();
+  refreshCalibrationSelect();
   arStatus.textContent = "Requesting orientation and camera access…";
 
   let orientationMessage;
@@ -336,6 +398,14 @@ async function openArView() {
 
 function closeArView() {
   state.ar.active = false;
+  state.ar.calibrationStep = null;
+  state.ar.calibrationSamples = [];
+  state.ar.orientationHistory = [];
+  arView.classList.remove("calibrating");
+  arMainControls.hidden = false;
+  arCalibrationPanel.hidden = true;
+  arCalibrationTarget.hidden = true;
+  arMarkers.hidden = false;
   window.removeEventListener("deviceorientation", handleOrientation, true);
   if (state.ar.stream) state.ar.stream.getTracks().forEach((track) => track.stop());
   state.ar.stream = null;
@@ -343,16 +413,124 @@ function closeArView() {
   arView.hidden = true;
 }
 
-function calibrateArView() {
+function showCalibrationStep() {
+  const point = CALIBRATION_POINTS[state.ar.calibrationStep];
+  arCalibrationTarget.style.left = `${point.x * 100}%`;
+  arCalibrationTarget.style.top = `${point.y * 100}%`;
+  arCalibrationInstruction.textContent = `Step ${state.ar.calibrationStep + 1} of ${CALIBRATION_POINTS.length}: place the filtered Sun in the ${point.name}, hold still, then capture.`;
+}
+
+function startSunCalibration() {
+  const currentSun = sunPositionAt(new Date());
+  if (currentSun.elevation <= 1) {
+    arStatus.textContent = "The current Sun is too close to or below the horizon for calibration.";
+    return;
+  }
   if (state.ar.rawHeading === null || state.ar.rawPitch === null) {
     arStatus.textContent = "Orientation has not initialized yet. Move the phone and try again.";
     return;
   }
-  const selected = state.ar.targets.find((target) => target.selected);
-  state.ar.headingOffset = signedAngleDifference(selected.azimuth, state.ar.rawHeading);
-  state.ar.pitchOffset = selected.elevation - state.ar.rawPitch;
-  arStatus.textContent = "Calibrated: the current centre is treated as the selected-time Sun position.";
-  renderArOverlay();
+  state.ar.calibrationStep = 0;
+  state.ar.calibrationSamples = [];
+  arView.classList.add("calibrating");
+  arMainControls.hidden = true;
+  arCalibrationPanel.hidden = false;
+  arCalibrationTarget.hidden = false;
+  arMarkers.hidden = true;
+  arStatus.textContent = `Current Sun: ${currentSun.azimuth.toFixed(1)}° bearing, ${currentSun.elevation.toFixed(1)}° elevation.`;
+  showCalibrationStep();
+}
+
+function cancelSunCalibration(message = "Calibration cancelled.") {
+  state.ar.calibrationStep = null;
+  state.ar.calibrationSamples = [];
+  arView.classList.remove("calibrating");
+  arMainControls.hidden = false;
+  arCalibrationPanel.hidden = true;
+  arCalibrationTarget.hidden = true;
+  arMarkers.hidden = false;
+  arStatus.textContent = message;
+}
+
+function averagedRecentOrientation() {
+  const cutoff = performance.now() - 450;
+  const recent = state.ar.orientationHistory.filter((sample) => sample.time >= cutoff);
+  if (recent.length < 3) return null;
+  const sinMean = recent.reduce((sum, sample) => sum + Math.sin(toRadians(sample.heading)), 0) / recent.length;
+  const cosMean = recent.reduce((sum, sample) => sum + Math.cos(toRadians(sample.heading)), 0) / recent.length;
+  return {
+    heading: normalizeAngle(toDegrees(Math.atan2(sinMean, cosMean))),
+    pitch: recent.reduce((sum, sample) => sum + sample.pitch, 0) / recent.length,
+    readingCount: recent.length,
+  };
+}
+
+function fitProjection(points, minFov = 20, maxFov = 150) {
+  let best = null;
+  for (let fov = minFov; fov <= maxFov; fov += 0.05) {
+    const projected = points.map((point) => toDegrees(Math.atan(2 * point.screenOffset * Math.tan(toRadians(fov / 2)))));
+    const offset = points.reduce((sum, point, index) => sum + point.angle - projected[index], 0) / points.length;
+    const residuals = points.map((point, index) => point.angle - offset - projected[index]);
+    const squaredError = residuals.reduce((sum, residual) => sum + residual * residual, 0);
+    if (!best || squaredError < best.squaredError) best = { fov, offset, residuals, squaredError };
+  }
+  return best;
+}
+
+function finishSunCalibration() {
+  const headingPoints = state.ar.calibrationSamples.map((sample) => ({
+    screenOffset: sample.point.x - 0.5,
+    angle: signedAngleDifference(sample.sun.azimuth, sample.heading),
+  }));
+  const pitchPoints = state.ar.calibrationSamples.map((sample) => ({
+    screenOffset: 0.5 - sample.point.y,
+    angle: sample.sun.elevation - sample.pitch,
+  }));
+  const headingFit = fitProjection(headingPoints, 20, 130);
+  const pitchFit = fitProjection(pitchPoints, 20, 150);
+  const residuals = [...headingFit.residuals, ...pitchFit.residuals];
+  const rmsError = Math.sqrt(residuals.reduce((sum, residual) => sum + residual * residual, 0) / residuals.length);
+  const horizontalFov = headingFit.fov;
+  const verticalFov = pitchFit.fov;
+
+  const fitAtBoundary = horizontalFov <= 20.1 || horizontalFov >= 129.9 || verticalFov <= 20.1 || verticalFov >= 149.9;
+  if (!Number.isFinite(horizontalFov) || !Number.isFinite(verticalFov) || fitAtBoundary || rmsError > 5) {
+    cancelSunCalibration("Calibration fit was not reliable. Keep the phone upright, hold each position steady and repeat the sequence.");
+    return;
+  }
+
+  const track = state.ar.stream?.getVideoTracks()[0];
+  const calibration = {
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()),
+    createdAt: new Date().toISOString(),
+    latitude: state.observer.lat,
+    longitude: state.observer.lng,
+    headingOffset: headingFit.offset,
+    pitchOffset: pitchFit.offset,
+    horizontalFov,
+    verticalFov,
+    rmsError,
+    cameraLabel: track?.label || "Rear camera",
+    cameraSettings: track?.getSettings ? track.getSettings() : {},
+  };
+  const calibrations = [calibration, ...loadSavedCalibrations()];
+  const stored = storeSavedCalibrations(calibrations);
+  applyCalibration(calibration);
+  refreshCalibrationSelect(calibration.id);
+  cancelSunCalibration(`Calibration ${stored ? "saved" : "applied but could not be saved"}: ${horizontalFov.toFixed(1)}° × ${verticalFov.toFixed(1)}° FOV, ${rmsError.toFixed(1)}° fit error.`);
+}
+
+function captureSunCalibration() {
+  const orientation = averagedRecentOrientation();
+  if (!orientation) {
+    arStatus.textContent = "Not enough stable sensor readings. Hold still briefly and try again.";
+    return;
+  }
+  const point = CALIBRATION_POINTS[state.ar.calibrationStep];
+  state.ar.calibrationSamples.push({ point, sun: sunPositionAt(new Date()), ...orientation });
+  state.ar.calibrationStep += 1;
+  if (state.ar.calibrationStep >= CALIBRATION_POINTS.length) finishSunCalibration();
+  else showCalibrationStep();
 }
 
 function renderSightline() {
@@ -454,9 +632,29 @@ dateTimeInput.addEventListener("change", () => updateCalculations());
 document.querySelector("#locate-button").addEventListener("click", locateUser);
 document.querySelector("#ar-button").addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
-document.querySelector("#ar-calibrate").addEventListener("click", calibrateArView);
+document.querySelector("#ar-calibrate").addEventListener("click", startSunCalibration);
+document.querySelector("#ar-capture-calibration").addEventListener("click", captureSunCalibration);
+document.querySelector("#ar-cancel-calibration").addEventListener("click", () => cancelSunCalibration());
+document.querySelector("#ar-apply-calibration").addEventListener("click", () => {
+  const calibration = loadSavedCalibrations().find((candidate) => candidate.id === arCalibrationSelect.value);
+  if (calibration) applyCalibration(calibration);
+  else arStatus.textContent = "Choose a saved calibration first.";
+});
+document.querySelector("#ar-delete-calibration").addEventListener("click", () => {
+  const selectedId = arCalibrationSelect.value;
+  if (!selectedId) {
+    arStatus.textContent = "Choose a saved calibration first.";
+    return;
+  }
+  if (!window.confirm("Delete this saved AR calibration?")) return;
+  storeSavedCalibrations(loadSavedCalibrations().filter((calibration) => calibration.id !== selectedId));
+  refreshCalibrationSelect();
+  arStatus.textContent = "Saved calibration deleted.";
+});
 arFov.addEventListener("input", () => {
   state.ar.horizontalFov = Number(arFov.value);
+  const stageRatio = arView.clientHeight / Math.max(arView.clientWidth, 1);
+  state.ar.verticalFov = toDegrees(2 * Math.atan(Math.tan(toRadians(state.ar.horizontalFov / 2)) * stageRatio));
   arFovValue.textContent = `${arFov.value}°`;
   renderArOverlay();
 });
@@ -487,4 +685,5 @@ map.on("click", (event) => {
 });
 
 updateCalculations({ fit: true });
+refreshCalibrationSelect();
 locateUser();

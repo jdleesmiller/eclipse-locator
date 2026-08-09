@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260809-ar1" />
+    <link rel="stylesheet" href="styles.css?v=20260809-ar2" />
   </head>
   <body>
     <main>
@@ -84,24 +84,36 @@
         <button id="ar-close" class="ar-close" type="button" aria-label="Close AR view">×</button>
         <div id="ar-stage" class="ar-stage">
           <div class="ar-reticle" aria-hidden="true"></div>
+          <div id="ar-calibration-target" class="ar-calibration-target" hidden aria-hidden="true"></div>
           <div id="ar-markers"></div>
           <div id="ar-direction" class="ar-direction">Waiting for orientation…</div>
         </div>
         <div class="ar-controls">
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
           <p id="ar-status">Requesting camera and orientation access…</p>
-          <div class="ar-control-row">
-            <button id="ar-calibrate" type="button">Calibrate centre to selected time</button>
-            <label for="ar-fov">Camera width <span id="ar-fov-value">60°</span></label>
-            <input id="ar-fov" type="range" min="40" max="90" value="60" step="1" />
+          <div id="ar-main-controls">
+            <div class="ar-control-row">
+              <button id="ar-calibrate" type="button">Calibrate with current Sun</button>
+              <label for="ar-fov">Camera width <span id="ar-fov-value">60°</span></label>
+              <input id="ar-fov" type="range" min="25" max="100" value="60" step="1" />
+            </div>
+            <div class="saved-calibrations">
+              <select id="ar-calibration-select" aria-label="Saved calibrations"><option value="">Saved calibrations…</option></select>
+              <button id="ar-apply-calibration" type="button">Apply</button>
+              <button id="ar-delete-calibration" class="secondary" type="button">Delete</button>
+            </div>
+            <p class="ar-help">Hold the phone upright in portrait. Saved FOV remains useful, but compass alignment can change near metal or magnets.</p>
           </div>
-          <p class="ar-help">Hold the phone upright in portrait. To calibrate, first aim the centre at the selected-time direction using a known landmark or trusted compass. Markers are estimates; sensor drift can move them noticeably.</p>
+          <div id="ar-calibration-panel" class="ar-calibration-panel" hidden>
+            <p id="ar-calibration-instruction"></p>
+            <div><button id="ar-capture-calibration" type="button">Capture position</button><button id="ar-cancel-calibration" class="secondary" type="button">Cancel</button></div>
+          </div>
         </div>
       </section>
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
-    <script src="app.js?v=20260809-ar1"></script>
+    <script src="app.js?v=20260809-ar2"></script>
   </body>
 </html>
