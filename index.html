@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#071525" />
+    <title>Gijón Eclipse Locator</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="preconnect" href="https://tile.openstreetmap.org" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <div id="map" aria-label="Map showing the eclipse sightline"></div>
+
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">12 AUGUST 2026</p>
+          <h1>Eclipse sightline</h1>
+        </div>
+        <button id="locate-button" class="icon-button" type="button" aria-label="Use my location" title="Use my location">
+          <span aria-hidden="true">⌖</span>
+        </button>
+      </header>
+
+      <section class="panel" aria-label="Eclipse controls and results">
+        <div class="drag-handle" aria-hidden="true"></div>
+        <div class="time-row">
+          <label for="date-time">Date &amp; time <span>(your device time zone)</span></label>
+          <input id="date-time" type="datetime-local" value="2026-08-12T20:27" step="60" />
+        </div>
+
+        <div class="readings" aria-live="polite">
+          <div>
+            <span class="reading-label">Sun bearing</span>
+            <strong id="azimuth">—</strong>
+            <small id="direction">—</small>
+          </div>
+          <div>
+            <span class="reading-label">Elevation</span>
+            <strong id="elevation">—</strong>
+            <small>above horizon</small>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="set-location-button" type="button">Set observer on map</button>
+          <button id="gijon-button" class="secondary" type="button">Reset to Gijón</button>
+        </div>
+
+        <div class="height-card">
+          <div class="section-heading">
+            <h2>Solar line height</h2>
+            <span>flat-earth estimate</span>
+          </div>
+          <div id="height-table" class="height-grid"></div>
+          <p id="height-note" class="note"></p>
+        </div>
+
+        <div class="terrain-card">
+          <div class="section-heading">
+            <h2>Terrain clearance</h2>
+            <span id="terrain-result">Loading…</span>
+          </div>
+          <div class="profile-ranges" role="group" aria-label="Terrain profile distance">
+            <button type="button" data-range="5" class="active">First 5 km</button>
+            <button type="button" data-range="20">20 km</button>
+            <button type="button" data-range="60">60 km</button>
+          </div>
+          <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
+          <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><a href="https://open-meteo.com/en/docs/elevation-api" target="_blank" rel="noreferrer">Open-Meteo / Copernicus</a></div>
+          <p id="terrain-note" class="note">Sampling terrain along the ray…</p>
+        </div>
+
+        <p id="status" class="status">Finding your location…</p>
+        <p class="hint">Tap the map to inspect the sightline. Drag the observer marker to try another viewpoint.</p>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
