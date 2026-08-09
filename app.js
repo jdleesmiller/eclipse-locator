@@ -77,6 +77,7 @@ const arStatus = document.querySelector("#ar-status");
 const arFov = document.querySelector("#ar-fov");
 const arFovValue = document.querySelector("#ar-fov-value");
 const arMainControls = document.querySelector("#ar-main-controls");
+const arCalibrationSettings = document.querySelector("#ar-calibration-settings");
 const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
 const arCalibrationTarget = document.querySelector("#ar-calibration-target");
 const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
@@ -403,6 +404,7 @@ function closeArView() {
   state.ar.orientationHistory = [];
   arView.classList.remove("calibrating");
   arMainControls.hidden = false;
+  arCalibrationSettings.hidden = true;
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
@@ -434,6 +436,7 @@ function startSunCalibration() {
   state.ar.calibrationSamples = [];
   arView.classList.add("calibrating");
   arMainControls.hidden = true;
+  arCalibrationSettings.hidden = true;
   arCalibrationPanel.hidden = false;
   arCalibrationTarget.hidden = false;
   arMarkers.hidden = true;
@@ -441,11 +444,12 @@ function startSunCalibration() {
   showCalibrationStep();
 }
 
-function cancelSunCalibration(message = "Calibration cancelled.") {
+function cancelSunCalibration(message = "Calibration cancelled.", returnToSettings = true) {
   state.ar.calibrationStep = null;
   state.ar.calibrationSamples = [];
   arView.classList.remove("calibrating");
-  arMainControls.hidden = false;
+  arMainControls.hidden = returnToSettings;
+  arCalibrationSettings.hidden = !returnToSettings;
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
@@ -517,7 +521,7 @@ function finishSunCalibration() {
   const stored = storeSavedCalibrations(calibrations);
   applyCalibration(calibration);
   refreshCalibrationSelect(calibration.id);
-  cancelSunCalibration(`Calibration ${stored ? "saved" : "applied but could not be saved"}: ${horizontalFov.toFixed(1)}° × ${verticalFov.toFixed(1)}° FOV, ${rmsError.toFixed(1)}° fit error.`);
+  cancelSunCalibration(`Calibration ${stored ? "saved" : "applied but could not be saved"}: ${horizontalFov.toFixed(1)}° × ${verticalFov.toFixed(1)}° FOV, ${rmsError.toFixed(1)}° fit error.`, false);
 }
 
 function captureSunCalibration() {
@@ -632,6 +636,14 @@ dateTimeInput.addEventListener("change", () => updateCalculations());
 document.querySelector("#locate-button").addEventListener("click", locateUser);
 document.querySelector("#ar-button").addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
+document.querySelector("#ar-open-calibration").addEventListener("click", () => {
+  arMainControls.hidden = true;
+  arCalibrationSettings.hidden = false;
+});
+document.querySelector("#ar-close-calibration").addEventListener("click", () => {
+  arCalibrationSettings.hidden = true;
+  arMainControls.hidden = false;
+});
 document.querySelector("#ar-calibrate").addEventListener("click", startSunCalibration);
 document.querySelector("#ar-capture-calibration").addEventListener("click", captureSunCalibration);
 document.querySelector("#ar-cancel-calibration").addEventListener("click", () => cancelSunCalibration());

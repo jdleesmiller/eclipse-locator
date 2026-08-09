@@ -139,6 +139,8 @@ button.active { background: #f47d4b; }
 .ar-calibration-panel > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .ar-calibration-panel button { min-height: 40px; padding: 6px 10px; }
 .ar-view.calibrating .ar-reticle, .ar-view.calibrating .ar-direction { display: none; }
+.ar-settings-button { width: 100%; min-height: 36px; padding: 5px 10px; border: 1px solid var(--line); background: rgba(255,255,255,.08); color: var(--ink); font-size: 11px; }
+.ar-settings-done { width: 100%; min-height: 34px; margin-top: 7px; font-size: 10px; }
 
 @media (min-width: 760px) {
   #map { inset: 0; }

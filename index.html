@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260809-ar2" />
+    <link rel="stylesheet" href="styles.css?v=20260809-ar3" />
   </head>
   <body>
     <main>
@@ -92,6 +92,9 @@
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
           <p id="ar-status">Requesting camera and orientation access…</p>
           <div id="ar-main-controls">
+            <button id="ar-open-calibration" class="ar-settings-button" type="button">Calibration…</button>
+          </div>
+          <div id="ar-calibration-settings" hidden>
             <div class="ar-control-row">
               <button id="ar-calibrate" type="button">Calibrate with current Sun</button>
               <label for="ar-fov">Camera width <span id="ar-fov-value">60°</span></label>
@@ -103,6 +106,7 @@
               <button id="ar-delete-calibration" class="secondary" type="button">Delete</button>
             </div>
             <p class="ar-help">Hold the phone upright in portrait. Saved FOV remains useful, but compass alignment can change near metal or magnets.</p>
+            <button id="ar-close-calibration" class="secondary ar-settings-done" type="button">Done</button>
           </div>
           <div id="ar-calibration-panel" class="ar-calibration-panel" hidden>
             <p id="ar-calibration-instruction"></p>
@@ -114,6 +118,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
-    <script src="app.js?v=20260809-ar2"></script>
+    <script src="app.js?v=20260809-ar3"></script>
   </body>
 </html>
