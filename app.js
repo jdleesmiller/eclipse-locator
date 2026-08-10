@@ -21,6 +21,7 @@ const state = {
   locationName: "",
   locationTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   eclipse: null,
+  viewingDate: null,
   azimuth: 0,
   elevation: 0,
   settingLocation: false,
@@ -62,7 +63,6 @@ let distanceLayer = null;
 let terrainLayer = null;
 let lastLocationChoice = null;
 
-const dateTimeInput = document.querySelector("#date-time");
 const azimuthOutput = document.querySelector("#azimuth");
 const elevationOutput = document.querySelector("#elevation");
 const directionOutput = document.querySelector("#direction");
@@ -86,6 +86,8 @@ const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
 const arCalibrationTarget = document.querySelector("#ar-calibration-target");
 const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
 const arCalibrationSelect = document.querySelector("#ar-calibration-select");
+const arFilterCheck = document.querySelector("#ar-filter-check");
+const eclipseExplorer = document.querySelector("#eclipse-explorer");
 const locationGate = document.querySelector("#location-gate");
 const gateStatus = document.querySelector("#gate-status");
 const placeResults = document.querySelector("#place-results");
@@ -186,11 +188,6 @@ function formatLocationTime(date, includeDate = false, includeSeconds = false) {
   }).format(date);
 }
 
-function dateToDeviceInput(date) {
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return offsetDate.toISOString().slice(0, 16);
-}
-
 function nextVisibleEclipse(startDate, centralOnly = false) {
   const observer = new Astronomy.Observer(state.observer.lat, state.observer.lng, 0);
   let eclipse = Astronomy.SearchLocalSolarEclipse(startDate, observer);
@@ -224,14 +221,64 @@ function selectEclipse(eclipse, fit = true) {
   state.eclipse = eclipse;
   const kind = eclipseKindName(eclipse.kind);
   const peakDate = eventDate(eclipse.peak);
+  state.viewingDate = peakDate;
   const kindLabel = kind === "total" ? "Total solar eclipse" : kind === "annular" ? "Annular solar eclipse" : "Partial solar eclipse";
   eventKindOutput.textContent = kindLabel;
   eventSummaryOutput.textContent = `${state.locationName} · ${formatLocationTime(peakDate, true)} · ${Math.round(eclipse.obscuration * 100)}% obscuration`;
-  eventEyebrow.textContent = new Intl.DateTimeFormat([], { day: "numeric", month: "long", year: "numeric", timeZone: state.locationTimezone }).format(peakDate).toUpperCase();
-  eventTitle.textContent = kind === "partial" ? "Maximum-eclipse sightline" : `${kind === "total" ? "Totality" : "Annularity"} sightline`;
+  eventEyebrow.textContent = "ECLIPSE LOCATOR";
+  eventTitle.textContent = state.locationName;
   arOffscreenLabel.textContent = kind === "partial" ? "Maximum eclipse" : kind === "total" ? "Totality" : "Annularity";
-  dateTimeInput.value = dateToDeviceInput(peakDate);
   updateCalculations({ fit });
+}
+
+function upcomingEclipses(count, centralOnly = false) {
+  const eclipses = [];
+  let startDate = new Date();
+  while (eclipses.length < count) {
+    const eclipse = nextVisibleEclipse(startDate, centralOnly);
+    eclipses.push(eclipse);
+    startDate = new Date(eventDate(eclipse.peak).getTime() + 24 * 3600000);
+  }
+  return eclipses;
+}
+
+function eclipseChoice(eclipse) {
+  const kind = eclipseKindName(eclipse.kind);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "eclipse-choice";
+  const description = document.createElement("span");
+  const name = document.createElement("strong");
+  name.textContent = `${kind[0].toUpperCase()}${kind.slice(1)} solar eclipse`;
+  const date = document.createElement("span");
+  date.textContent = formatLocationTime(eventDate(eclipse.peak), true);
+  description.append(name, date);
+  const obscuration = document.createElement("b");
+  obscuration.textContent = `${Math.round(eclipse.obscuration * 100)}%`;
+  button.append(description, obscuration);
+  button.addEventListener("click", () => {
+    eclipseExplorer.hidden = true;
+    selectEclipse(eclipse, true);
+  });
+  return button;
+}
+
+function openEclipseExplorer() {
+  const localList = document.querySelector("#local-eclipse-list");
+  const centralList = document.querySelector("#central-eclipse-list");
+  document.querySelector("#explorer-location").textContent = `Eclipses calculated for ${state.locationName}. Select one to inspect its viewing direction.`;
+  localList.textContent = "Calculating…";
+  centralList.textContent = "Calculating…";
+  eclipseExplorer.hidden = false;
+  requestAnimationFrame(() => {
+    try {
+      localList.replaceChildren(...upcomingEclipses(5).map(eclipseChoice));
+      centralList.replaceChildren(...upcomingEclipses(3, true).map(eclipseChoice));
+    } catch (error) {
+      localList.textContent = `Could not calculate events: ${error.message}`;
+      centralList.textContent = "";
+    }
+  });
 }
 
 function findAndSelectEclipse({ startDate = new Date(), centralOnly = false, fit = true } = {}) {
@@ -633,6 +680,7 @@ function closeArView() {
   arView.classList.remove("calibrating");
   arMainControls.hidden = false;
   arCalibrationSettings.hidden = true;
+  arFilterCheck.hidden = true;
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
@@ -790,8 +838,8 @@ function renderSightline() {
 }
 
 function updateCalculations({ fit = false } = {}) {
-  const selectedDate = new Date(dateTimeInput.value);
-  if (Number.isNaN(selectedDate.getTime())) return;
+  const selectedDate = state.viewingDate;
+  if (!(selectedDate instanceof Date) || Number.isNaN(selectedDate.getTime())) return;
 
   const sun = SunCalc.getPosition(selectedDate, state.observer.lat, state.observer.lng);
   state.azimuth = (toDegrees(sun.azimuth) + 180 + 360) % 360;
@@ -913,7 +961,6 @@ function inspectPoint(latlng) {
     .openOn(map);
 }
 
-dateTimeInput.addEventListener("change", () => updateCalculations());
 document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
 document.querySelector("#gate-locate").addEventListener("click", () => locateUser(true));
 document.querySelector("#place-search-form").addEventListener("submit", async (event) => {
@@ -941,7 +988,19 @@ document.querySelector("#ar-close-calibration").addEventListener("click", () => 
   arCalibrationSettings.hidden = true;
   arMainControls.hidden = false;
 });
-document.querySelector("#ar-calibrate").addEventListener("click", startSunCalibration);
+document.querySelector("#ar-calibrate").addEventListener("click", () => {
+  arCalibrationSettings.hidden = true;
+  arFilterCheck.hidden = false;
+});
+document.querySelector("#ar-filter-confirm").addEventListener("click", () => {
+  arFilterCheck.hidden = true;
+  startSunCalibration();
+  if (state.ar.calibrationStep === null) arCalibrationSettings.hidden = false;
+});
+document.querySelector("#ar-filter-cancel").addEventListener("click", () => {
+  arFilterCheck.hidden = true;
+  arCalibrationSettings.hidden = false;
+});
 document.querySelector("#ar-capture-calibration").addEventListener("click", captureSunCalibration);
 document.querySelector("#ar-cancel-calibration").addEventListener("click", () => cancelSunCalibration());
 document.querySelector("#ar-apply-calibration").addEventListener("click", () => {
@@ -968,14 +1027,8 @@ arFov.addEventListener("input", () => {
   renderArOverlay();
 });
 document.querySelector("#choose-location-button").addEventListener("click", () => { locationGate.hidden = false; });
-document.querySelector("#next-eclipse").addEventListener("click", () => {
-  if (!state.eclipse) return;
-  findAndSelectEclipse({ startDate: new Date(eventDate(state.eclipse.peak).getTime() + 24 * 3600000), fit: true });
-});
-document.querySelector("#next-central-eclipse").addEventListener("click", () => {
-  if (!state.eclipse) return;
-  findAndSelectEclipse({ startDate: new Date(eventDate(state.eclipse.peak).getTime() + 24 * 3600000), centralOnly: true, fit: true });
-});
+document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
+document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
 document.querySelectorAll(".profile-ranges button").forEach((button) => {
   button.addEventListener("click", () => {
     state.profileRangeKm = Number(button.dataset.range);

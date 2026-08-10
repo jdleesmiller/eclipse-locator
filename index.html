@@ -9,15 +9,15 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260810-global1" />
+    <link rel="stylesheet" href="styles.css?v=20260810-design1" />
   </head>
   <body>
     <main>
       <section id="location-gate" class="location-gate" aria-labelledby="gate-title">
         <div class="gate-card">
           <p class="eyebrow">ECLIPSE LOCATOR</p>
-          <h1 id="gate-title">Never too early to prepare.</h1>
-          <p>Choose a location to find its next visible solar eclipse and explore the view toward the Sun.</p>
+          <h1 id="gate-title">Find your next solar eclipse.</h1>
+          <p>Choose where you will be to see the next eclipse visible there, then check its direction and horizon.</p>
           <button id="gate-locate" type="button">Use my location</button>
           <div class="gate-divider"><span>or search for a place</span></div>
           <form id="place-search-form">
@@ -38,7 +38,6 @@
           <h1 id="event-title">Eclipse sightline</h1>
         </div>
         <div class="top-actions">
-          <button id="ar-button" class="icon-button" type="button" aria-label="Open AR sky view" title="Open AR sky view"><span aria-hidden="true">AR</span></button>
           <button id="locate-button" class="icon-button" type="button" aria-label="Use my location" title="Use my location"><span aria-hidden="true">⌖</span></button>
         </div>
       </header>
@@ -47,38 +46,14 @@
         <div class="drag-handle" aria-hidden="true"></div>
         <div class="event-card">
           <div><strong id="event-kind">Finding eclipse…</strong><span id="event-summary"></span></div>
-          <div class="event-actions"><button id="next-eclipse" class="secondary" type="button">Next eclipse</button><button id="next-central-eclipse" class="secondary" type="button">Next total/annular</button></div>
-        </div>
-        <div class="time-row">
-          <label for="date-time">Date &amp; time <span>(your device time zone)</span></label>
-          <input id="date-time" type="datetime-local" step="60" />
+          <button id="explore-eclipses" class="text-button" type="button">Explore other eclipses</button>
         </div>
 
-        <div class="readings" aria-live="polite">
-          <div>
-            <span class="reading-label">Sun bearing</span>
-            <strong id="azimuth">—</strong>
-            <small id="direction">—</small>
-          </div>
-          <div>
-            <span class="reading-label">Elevation</span>
-            <strong id="elevation">—</strong>
-            <small>above horizon</small>
-          </div>
-        </div>
+        <button id="ar-button" class="ar-primary" type="button"><span aria-hidden="true">◉</span> Preview direction in AR</button>
 
         <div class="actions">
           <button id="set-location-button" type="button">Set observer on map</button>
           <button id="choose-location-button" class="secondary" type="button">Choose location</button>
-        </div>
-
-        <div class="height-card">
-          <div class="section-heading">
-            <h2>Solar line height</h2>
-            <span>flat-earth estimate</span>
-          </div>
-          <div id="height-table" class="height-grid"></div>
-          <p id="height-note" class="note"></p>
         </div>
 
         <div class="terrain-card">
@@ -86,18 +61,44 @@
             <h2>Terrain clearance</h2>
             <span id="terrain-result">Loading…</span>
           </div>
-          <div class="profile-ranges" role="group" aria-label="Terrain profile distance">
-            <button type="button" data-range="5" class="active">First 5 km</button>
-            <button type="button" data-range="20">20 km</button>
-            <button type="button" data-range="60">60 km</button>
-          </div>
-          <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
-          <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><a href="https://open-meteo.com/en/docs/elevation-api" target="_blank" rel="noreferrer">Open-Meteo / Copernicus</a></div>
           <p id="terrain-note" class="note">Sampling terrain along the ray…</p>
+          <details class="terrain-details">
+            <summary>View terrain profile</summary>
+            <div class="profile-ranges" role="group" aria-label="Terrain profile distance">
+              <button type="button" data-range="5" class="active">First 5 km</button>
+              <button type="button" data-range="20">20 km</button>
+              <button type="button" data-range="60">60 km</button>
+            </div>
+            <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
+            <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><a href="https://open-meteo.com/en/docs/elevation-api" target="_blank" rel="noreferrer">Open-Meteo / Copernicus</a></div>
+          </details>
         </div>
+
+        <details class="technical-details">
+          <summary>Technical details</summary>
+          <div class="readings" aria-live="polite">
+            <div><span class="reading-label">Sun bearing</span><strong id="azimuth">—</strong><small id="direction">—</small></div>
+            <div><span class="reading-label">Elevation</span><strong id="elevation">—</strong><small>above horizon</small></div>
+          </div>
+          <div class="section-heading"><h2>Solar line height</h2><span>flat-earth estimate</span></div>
+          <div id="height-table" class="height-grid"></div>
+          <p id="height-note" class="note"></p>
+        </details>
 
         <p id="status" class="status">Finding your location…</p>
         <p class="hint">Tap the map to inspect the sightline. Drag the observer marker to try another viewpoint.</p>
+        <p class="safety-note"><strong>Solar safety:</strong> never look directly at the Sun without certified solar viewing protection.</p>
+      </section>
+
+      <section id="eclipse-explorer" class="sheet-view" hidden aria-labelledby="explorer-title">
+        <div class="sheet-header">
+          <div><p class="eyebrow">ECLIPSE LOCATOR</p><h2 id="explorer-title">Explore other eclipses</h2></div>
+          <button id="close-explorer" class="sheet-close" type="button" aria-label="Close eclipse explorer">×</button>
+        </div>
+        <p id="explorer-location" class="sheet-intro"></p>
+        <section><h3>Visible from this location</h3><p>Upcoming eclipses where the Sun is above the horizon.</p><div id="local-eclipse-list" class="eclipse-list"></div></section>
+        <section><h3>Next total or annular eclipses here</h3><p>Central eclipses visible from this exact viewing point may be decades away.</p><div id="central-eclipse-list" class="eclipse-list"></div></section>
+        <p class="sheet-note">A “nearby” eclipse finder needs reliable path-distance calculations and will be a later enhancement.</p>
       </section>
 
       <section id="ar-view" class="ar-view" hidden aria-label="Augmented reality eclipse view">
@@ -113,7 +114,7 @@
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
           <p id="ar-status">Requesting camera and orientation access…</p>
           <div id="ar-main-controls">
-            <button id="ar-open-calibration" class="ar-settings-button" type="button">Calibration…</button>
+            <button id="ar-open-calibration" class="ar-settings-button" type="button">Refine alignment <span>requires a proper solar filter</span></button>
           </div>
           <div id="ar-calibration-settings" hidden>
             <div class="ar-control-row">
@@ -129,6 +130,12 @@
             <p class="ar-help">Hold the phone upright in portrait. Saved FOV remains useful, but compass alignment can change near metal or magnets.</p>
             <button id="ar-close-calibration" class="secondary ar-settings-done" type="button">Done</button>
           </div>
+          <div id="ar-filter-check" class="ar-filter-check" hidden>
+            <strong>Fit the solar filter before continuing</strong>
+            <p>Securely cover the phone’s active camera lenses with a suitable solar filter. Never look directly at the Sun without certified solar viewing protection. Pointing an unfiltered camera at the Sun may damage its sensor. The phone screen does not protect your eyes.</p>
+            <button id="ar-filter-confirm" type="button">My camera lenses are securely filtered</button>
+            <button id="ar-filter-cancel" class="secondary" type="button">Not now</button>
+          </div>
           <div id="ar-calibration-panel" class="ar-calibration-panel" hidden>
             <p id="ar-calibration-instruction"></p>
             <div><button id="ar-capture-calibration" type="button">Capture position</button><button id="ar-cancel-calibration" class="secondary" type="button">Cancel</button></div>
@@ -140,6 +147,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
-    <script src="app.js?v=20260810-global1"></script>
+    <script src="app.js?v=20260810-design1"></script>
   </body>
 </html>
