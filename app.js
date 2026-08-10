@@ -43,6 +43,17 @@ const state = {
     orientationHistory: [],
     calibrationStep: null,
     calibrationSamples: [],
+    cameraReady: false,
+    cameraError: null,
+    orientationPermissionGranted: false,
+    orientationError: null,
+    orientationReady: false,
+    validOrientationCount: 0,
+    initialOrientation: null,
+    orientationMotionDegrees: 0,
+    compassAccuracy: null,
+    compassWarningActive: false,
+    readyAnnounced: false,
   },
 };
 
@@ -304,12 +315,46 @@ function createArMarkers() {
   }).join("");
 }
 
+function updateArReadiness() {
+  const accuracyBlocks = Number.isFinite(state.ar.compassAccuracy) && state.ar.compassAccuracy > 45;
+  const enoughReadings = state.ar.validOrientationCount >= 5;
+  const motionDetected = state.ar.orientationMotionDegrees >= 1;
+  state.ar.orientationReady = state.ar.orientationPermissionGranted && enoughReadings && motionDetected && !accuracyBlocks;
+
+  if (state.ar.cameraError) {
+    arStatus.textContent = `Camera unavailable: ${state.ar.cameraError}`;
+  } else if (!state.ar.cameraReady) {
+    arStatus.textContent = "Starting rear camera…";
+  } else if (state.ar.orientationError) {
+    arStatus.textContent = state.ar.orientationError;
+  } else if (!state.ar.orientationPermissionGranted) {
+    arStatus.textContent = "Waiting for orientation permission…";
+  } else if (accuracyBlocks) {
+    arStatus.textContent = "Compass accuracy is very poor. Move away from metal or magnets, then move the phone gently.";
+  } else if (!enoughReadings || !motionDetected) {
+    arStatus.textContent = "Initializing compass—move the phone gently through a small arc.";
+  } else if (Number.isFinite(state.ar.compassAccuracy) && state.ar.compassAccuracy > 25) {
+    arStatus.textContent = `AR active, but compass accuracy is only about ±${Math.round(state.ar.compassAccuracy)}°. Move away from metal or magnets.`;
+    state.ar.compassWarningActive = true;
+    state.ar.readyAnnounced = true;
+  } else if (state.ar.compassWarningActive) {
+    arStatus.textContent = "AR ready. Compass accuracy has improved.";
+    state.ar.compassWarningActive = false;
+  } else if (!state.ar.readyAnnounced) {
+    const accuracy = Number.isFinite(state.ar.compassAccuracy) && state.ar.compassAccuracy >= 0 ? ` Compass accuracy approximately ±${Math.round(state.ar.compassAccuracy)}°.` : "";
+    arStatus.textContent = `AR ready.${accuracy}`;
+    state.ar.readyAnnounced = true;
+  }
+}
+
 function renderArOverlay() {
   if (!state.ar.active) return;
-  if (state.ar.rawHeading === null || state.ar.rawPitch === null) {
+  if (!state.ar.cameraReady || !state.ar.orientationReady || state.ar.rawHeading === null || state.ar.rawPitch === null) {
     arOffscreenArrow.hidden = true;
+    arMarkers.hidden = true;
     return;
   }
+  if (state.ar.calibrationStep === null) arMarkers.hidden = false;
 
   const heading = normalizeAngle(state.ar.rawHeading + state.ar.headingOffset);
   const pitch = state.ar.rawPitch + state.ar.pitchOffset;
@@ -357,13 +402,24 @@ function handleOrientation(event) {
     const screenAngle = screen.orientation?.angle || window.orientation || 0;
     heading = normalizeAngle(360 - event.alpha + screenAngle);
   }
-  if (heading !== null) state.ar.rawHeading = heading;
-  if (Number.isFinite(event.beta)) state.ar.rawPitch = event.beta - 90;
-  if (state.ar.rawHeading !== null && state.ar.rawPitch !== null) {
+  const pitch = Number.isFinite(event.beta) ? event.beta - 90 : null;
+  if (Number.isFinite(event.webkitCompassAccuracy)) state.ar.compassAccuracy = event.webkitCompassAccuracy;
+  if (heading !== null && pitch !== null) {
+    state.ar.rawHeading = heading;
+    state.ar.rawPitch = pitch;
+    state.ar.validOrientationCount += 1;
+    if (!state.ar.initialOrientation) {
+      state.ar.initialOrientation = { heading, pitch };
+    } else {
+      const headingMotion = Math.abs(signedAngleDifference(heading, state.ar.initialOrientation.heading));
+      const pitchMotion = Math.abs(pitch - state.ar.initialOrientation.pitch);
+      state.ar.orientationMotionDegrees = Math.max(state.ar.orientationMotionDegrees, headingMotion, pitchMotion);
+    }
     const now = performance.now();
-    state.ar.orientationHistory.push({ time: now, heading: state.ar.rawHeading, pitch: state.ar.rawPitch });
+    state.ar.orientationHistory.push({ time: now, heading, pitch });
     state.ar.orientationHistory = state.ar.orientationHistory.filter((sample) => now - sample.time <= 1200);
   }
+  updateArReadiness();
   renderArOverlay();
 }
 
@@ -373,8 +429,25 @@ async function requestOrientation() {
     const permission = await DeviceOrientationEvent.requestPermission();
     if (permission !== "granted") return "Orientation permission was not granted; camera view only.";
   }
+  if (!state.ar.active) return "AR was closed before orientation initialized.";
+  state.ar.orientationPermissionGranted = true;
   window.addEventListener("deviceorientation", handleOrientation, true);
   return "Camera and orientation active.";
+}
+
+async function startArCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera access requires HTTPS and a supported browser");
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+  if (!state.ar.active) {
+    stream.getTracks().forEach((track) => track.stop());
+    return;
+  }
+  state.ar.stream = stream;
+  arVideo.srcObject = stream;
+  await arVideo.play();
+  state.ar.cameraReady = true;
+  updateArReadiness();
+  renderArOverlay();
 }
 
 async function openArView() {
@@ -383,27 +456,36 @@ async function openArView() {
   state.ar.rawPitch = null;
   state.ar.headingOffset = 0;
   state.ar.pitchOffset = 0;
+  state.ar.cameraReady = false;
+  state.ar.cameraError = null;
+  state.ar.orientationPermissionGranted = false;
+  state.ar.orientationError = null;
+  state.ar.orientationReady = false;
+  state.ar.validOrientationCount = 0;
+  state.ar.initialOrientation = null;
+  state.ar.orientationMotionDegrees = 0;
+  state.ar.compassAccuracy = null;
+  state.ar.compassWarningActive = false;
+  state.ar.readyAnnounced = false;
+  state.ar.orientationHistory = [];
   arView.hidden = false;
   createArMarkers();
+  arMarkers.hidden = true;
+  arOffscreenArrow.hidden = true;
   refreshCalibrationSelect();
   arStatus.textContent = "Requesting orientation and camera access…";
 
-  let orientationMessage;
-  try {
-    orientationMessage = await requestOrientation();
-  } catch (error) {
-    orientationMessage = `Orientation unavailable: ${error.message}`;
-  }
-
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera access requires HTTPS and a supported browser");
-    state.ar.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-    arVideo.srcObject = state.ar.stream;
-    await arVideo.play();
-    arStatus.textContent = orientationMessage;
-  } catch (error) {
-    arStatus.textContent = `${orientationMessage} Camera unavailable: ${error.message}`;
-  }
+  // Start both permission-sensitive operations before awaiting either one so
+  // both remain associated with the AR button's user gesture on iOS.
+  let orientationMessage = "";
+  const cameraTask = startArCamera().catch((error) => { state.ar.cameraError = error.message; });
+  const orientationTask = requestOrientation()
+    .then((message) => { orientationMessage = message; })
+    .catch((error) => { orientationMessage = `Orientation unavailable: ${error.message}`; });
+  await Promise.all([cameraTask, orientationTask]);
+  if (!state.ar.active) return;
+  if (!state.ar.orientationPermissionGranted) state.ar.orientationError = orientationMessage;
+  updateArReadiness();
 }
 
 function closeArView() {
@@ -411,6 +493,11 @@ function closeArView() {
   state.ar.calibrationStep = null;
   state.ar.calibrationSamples = [];
   state.ar.orientationHistory = [];
+  state.ar.cameraReady = false;
+  state.ar.cameraError = null;
+  state.ar.orientationPermissionGranted = false;
+  state.ar.orientationError = null;
+  state.ar.orientationReady = false;
   arView.classList.remove("calibrating");
   arMainControls.hidden = false;
   arCalibrationSettings.hidden = true;
@@ -437,8 +524,8 @@ function startSunCalibration() {
     arStatus.textContent = "The current Sun is too close to or below the horizon for calibration.";
     return;
   }
-  if (state.ar.rawHeading === null || state.ar.rawPitch === null) {
-    arStatus.textContent = "Orientation has not initialized yet. Move the phone and try again.";
+  if (!state.ar.cameraReady || !state.ar.orientationReady || state.ar.rawHeading === null || state.ar.rawPitch === null) {
+    arStatus.textContent = "Camera and orientation must finish initializing before calibration. Move the phone gently and try again.";
     return;
   }
   state.ar.calibrationStep = 0;
