@@ -4,20 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#071525" />
-    <title>Gijón Eclipse Locator</title>
+    <title>Eclipse Locator</title>
     <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260810-ar6" />
+    <link rel="stylesheet" href="styles.css?v=20260810-global1" />
   </head>
   <body>
     <main>
+      <section id="location-gate" class="location-gate" aria-labelledby="gate-title">
+        <div class="gate-card">
+          <p class="eyebrow">ECLIPSE LOCATOR</p>
+          <h1 id="gate-title">Never too early to prepare.</h1>
+          <p>Choose a location to find its next visible solar eclipse and explore the view toward the Sun.</p>
+          <button id="gate-locate" type="button">Use my location</button>
+          <div class="gate-divider"><span>or search for a place</span></div>
+          <form id="place-search-form">
+            <input id="place-search" type="search" autocomplete="off" placeholder="City or place name" aria-label="City or place name" />
+            <button type="submit">Search</button>
+          </form>
+          <div id="place-results" class="place-results" aria-live="polite"></div>
+          <button id="last-location" class="secondary" type="button" hidden></button>
+          <p id="gate-status" class="gate-status">The map loads after a location is selected.</p>
+          <p class="gate-attribution">Place search by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.</p>
+        </div>
+      </section>
       <div id="map" aria-label="Map showing the eclipse sightline"></div>
 
       <header class="topbar">
         <div>
-          <p class="eyebrow">12 AUGUST 2026</p>
-          <h1>Eclipse sightline</h1>
+          <p id="event-eyebrow" class="eyebrow">NEXT SOLAR ECLIPSE</p>
+          <h1 id="event-title">Eclipse sightline</h1>
         </div>
         <div class="top-actions">
           <button id="ar-button" class="icon-button" type="button" aria-label="Open AR sky view" title="Open AR sky view"><span aria-hidden="true">AR</span></button>
@@ -27,9 +45,13 @@
 
       <section class="panel" aria-label="Eclipse controls and results">
         <div class="drag-handle" aria-hidden="true"></div>
+        <div class="event-card">
+          <div><strong id="event-kind">Finding eclipse…</strong><span id="event-summary"></span></div>
+          <div class="event-actions"><button id="next-eclipse" class="secondary" type="button">Next eclipse</button><button id="next-central-eclipse" class="secondary" type="button">Next total/annular</button></div>
+        </div>
         <div class="time-row">
           <label for="date-time">Date &amp; time <span>(your device time zone)</span></label>
-          <input id="date-time" type="datetime-local" value="2026-08-12T20:27" step="60" />
+          <input id="date-time" type="datetime-local" step="60" />
         </div>
 
         <div class="readings" aria-live="polite">
@@ -47,7 +69,7 @@
 
         <div class="actions">
           <button id="set-location-button" type="button">Set observer on map</button>
-          <button id="gijon-button" class="secondary" type="button">Reset to Gijón</button>
+          <button id="choose-location-button" class="secondary" type="button">Choose location</button>
         </div>
 
         <div class="height-card">
@@ -117,6 +139,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
-    <script src="app.js?v=20260810-ar6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+    <script src="app.js?v=20260810-global1"></script>
   </body>
 </html>

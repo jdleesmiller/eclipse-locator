@@ -1,18 +1,13 @@
-/* global L, SunCalc */
+/* global L, SunCalc, Astronomy */
 
-const GIJON = { lat: 43.5322, lng: -5.6611 };
 const MAX_DISTANCE_KM = 60;
 const WEDGE_DEGREES = 4;
 const DISTANCES_KM = [5, 10, 20, 30, 50];
 const TERRAIN_SAMPLE_COUNT = 100;
 const EARTH_RADIUS_M = 6371008.8;
 const EYE_HEIGHT_M = 1.7;
-const ECLIPSE_PHASES = [
-  { label: "Partial begins", time: "2026-08-12T19:30:57+02:00" },
-  { label: "Totality 20:26:42–20:28:27", time: "2026-08-12T20:27:35+02:00", displayTime: "maximum 20:27:35", totality: true },
-  { label: "Partial ends", time: "2026-08-12T21:20:39+02:00" },
-];
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
+const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
 const CALIBRATION_POINTS = [
   { name: "centre", x: 0.5, y: 0.5 },
   { name: "left target", x: 0.2, y: 0.5 },
@@ -22,11 +17,13 @@ const CALIBRATION_POINTS = [
 ];
 
 const state = {
-  observer: { ...GIJON },
+  observer: null,
+  locationName: "",
+  locationTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  eclipse: null,
   azimuth: 0,
   elevation: 0,
   settingLocation: false,
-  firstLocation: true,
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
@@ -57,17 +54,13 @@ const state = {
   },
 };
 
-const map = L.map("map", { zoomControl: true, preferCanvas: true }).setView(GIJON, 9);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
-
 const observerIcon = L.divIcon({ className: "", html: '<div class="observer-pin"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
-const observerMarker = L.marker(GIJON, { icon: observerIcon, draggable: true, zIndexOffset: 1000 }).addTo(map);
-const sightlineLayer = L.layerGroup().addTo(map);
-const distanceLayer = L.layerGroup().addTo(map);
-const terrainLayer = L.layerGroup().addTo(map);
+let map = null;
+let observerMarker = null;
+let sightlineLayer = null;
+let distanceLayer = null;
+let terrainLayer = null;
+let lastLocationChoice = null;
 
 const dateTimeInput = document.querySelector("#date-time");
 const azimuthOutput = document.querySelector("#azimuth");
@@ -93,6 +86,15 @@ const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
 const arCalibrationTarget = document.querySelector("#ar-calibration-target");
 const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
 const arCalibrationSelect = document.querySelector("#ar-calibration-select");
+const locationGate = document.querySelector("#location-gate");
+const gateStatus = document.querySelector("#gate-status");
+const placeResults = document.querySelector("#place-results");
+const lastLocationButton = document.querySelector("#last-location");
+const eventKindOutput = document.querySelector("#event-kind");
+const eventSummaryOutput = document.querySelector("#event-summary");
+const eventEyebrow = document.querySelector("#event-eyebrow");
+const eventTitle = document.querySelector("#event-title");
+const arOffscreenLabel = arOffscreenArrow.querySelector("b");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -138,6 +140,126 @@ function sunPositionAt(date) {
   };
 }
 
+function initializeMap() {
+  if (map) return;
+  map = L.map("map", { zoomControl: true, preferCanvas: true }).setView(state.observer, 9);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+  observerMarker = L.marker(state.observer, { icon: observerIcon, draggable: true, zIndexOffset: 1000 }).addTo(map);
+  sightlineLayer = L.layerGroup().addTo(map);
+  distanceLayer = L.layerGroup().addTo(map);
+  terrainLayer = L.layerGroup().addTo(map);
+  observerMarker.on("dragend", (event) => setObserver(event.target.getLatLng(), "Observer moved to"));
+  map.on("click", (event) => {
+    if (state.settingLocation) {
+      state.settingLocation = false;
+      setLocationButton.classList.remove("active");
+      setLocationButton.textContent = "Set observer on map";
+      setObserver(event.latlng, "Observer set to");
+    } else {
+      inspectPoint(event.latlng);
+    }
+  });
+}
+
+function eclipseKindName(kind) {
+  const value = String(kind).toLowerCase();
+  if (value.includes("total")) return "total";
+  if (value.includes("annular")) return "annular";
+  return "partial";
+}
+
+function eventDate(event) {
+  return event.time.date instanceof Date ? event.time.date : new Date(event.time.date);
+}
+
+function formatLocationTime(date, includeDate = false, includeSeconds = false) {
+  return new Intl.DateTimeFormat([], {
+    ...(includeDate ? { weekday: "short", year: "numeric", month: "short", day: "numeric" } : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(includeSeconds ? { second: "2-digit" } : {}),
+    timeZone: state.locationTimezone,
+    timeZoneName: includeDate ? "short" : undefined,
+  }).format(date);
+}
+
+function dateToDeviceInput(date) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function nextVisibleEclipse(startDate, centralOnly = false) {
+  const observer = new Astronomy.Observer(state.observer.lat, state.observer.lng, 0);
+  let eclipse = Astronomy.SearchLocalSolarEclipse(startDate, observer);
+  for (let attempts = 0; attempts < 300; attempts += 1) {
+    const kind = eclipseKindName(eclipse.kind);
+    if (eclipse.peak.altitude > 0 && (!centralOnly || kind !== "partial")) return eclipse;
+    eclipse = Astronomy.NextLocalSolarEclipse(eclipse.peak.time, observer);
+  }
+  throw new Error("No suitable eclipse found within the search range");
+}
+
+function eclipseArPhases(eclipse) {
+  const kind = eclipseKindName(eclipse.kind);
+  const phases = [{ label: "Partial begins", date: eventDate(eclipse.partial_begin) }];
+  if (kind === "partial") {
+    phases.push({ label: `Maximum partial · ${Math.round(eclipse.obscuration * 100)}%`, date: eventDate(eclipse.peak), primary: true });
+  } else {
+    const phaseName = kind === "total" ? "Totality" : "Annularity";
+    phases.push({
+      label: `${phaseName} ${formatLocationTime(eventDate(eclipse.total_begin), false, true)}–${formatLocationTime(eventDate(eclipse.total_end), false, true)}`,
+      date: eventDate(eclipse.peak),
+      displayTime: `maximum ${formatLocationTime(eventDate(eclipse.peak), false, true)}`,
+      primary: true,
+    });
+  }
+  phases.push({ label: "Partial ends", date: eventDate(eclipse.partial_end) });
+  return phases;
+}
+
+function selectEclipse(eclipse, fit = true) {
+  state.eclipse = eclipse;
+  const kind = eclipseKindName(eclipse.kind);
+  const peakDate = eventDate(eclipse.peak);
+  const kindLabel = kind === "total" ? "Total solar eclipse" : kind === "annular" ? "Annular solar eclipse" : "Partial solar eclipse";
+  eventKindOutput.textContent = kindLabel;
+  eventSummaryOutput.textContent = `${state.locationName} · ${formatLocationTime(peakDate, true)} · ${Math.round(eclipse.obscuration * 100)}% obscuration`;
+  eventEyebrow.textContent = new Intl.DateTimeFormat([], { day: "numeric", month: "long", year: "numeric", timeZone: state.locationTimezone }).format(peakDate).toUpperCase();
+  eventTitle.textContent = kind === "partial" ? "Maximum-eclipse sightline" : `${kind === "total" ? "Totality" : "Annularity"} sightline`;
+  arOffscreenLabel.textContent = kind === "partial" ? "Maximum eclipse" : kind === "total" ? "Totality" : "Annularity";
+  dateTimeInput.value = dateToDeviceInput(peakDate);
+  updateCalculations({ fit });
+}
+
+function findAndSelectEclipse({ startDate = new Date(), centralOnly = false, fit = true } = {}) {
+  eventKindOutput.textContent = "Calculating eclipse…";
+  try {
+    selectEclipse(nextVisibleEclipse(startDate, centralOnly), fit);
+  } catch (error) {
+    eventKindOutput.textContent = "Eclipse calculation failed";
+    eventSummaryOutput.textContent = error.message;
+  }
+}
+
+function activateLocation(location) {
+  state.observer = { lat: Number(location.lat), lng: Number(location.lng) };
+  state.locationName = location.name || `${state.observer.lat.toFixed(4)}, ${state.observer.lng.toFixed(4)}`;
+  state.locationTimezone = location.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  lastLocationChoice = { ...state.observer, name: state.locationName, timezone: state.locationTimezone };
+  lastLocationButton.hidden = false;
+  lastLocationButton.textContent = `Use last location: ${state.locationName}`;
+  try { localStorage.setItem(LAST_LOCATION_STORAGE_KEY, JSON.stringify(lastLocationChoice)); } catch { /* optional convenience only */ }
+  initializeMap();
+  observerMarker.setLatLng(state.observer);
+  map.setView(state.observer, 9);
+  locationGate.hidden = true;
+  statusOutput.textContent = `Observer: ${state.locationName} (${state.observer.lat.toFixed(5)}, ${state.observer.lng.toFixed(5)})`;
+  findAndSelectEclipse();
+}
+
 function loadSavedCalibrations() {
   try {
     const saved = JSON.parse(localStorage.getItem(CALIBRATION_STORAGE_KEY) || "[]");
@@ -158,10 +280,19 @@ function storeSavedCalibrations(calibrations) {
 
 function refreshCalibrationSelect(selectedId = "") {
   const calibrations = loadSavedCalibrations();
-  arCalibrationSelect.innerHTML = '<option value="">Saved calibrations…</option>' + calibrations.map((calibration) => {
+  arCalibrationSelect.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Saved calibrations…";
+  arCalibrationSelect.append(placeholder);
+  for (const calibration of calibrations) {
     const date = new Date(calibration.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
-    return `<option value="${calibration.id}">${date} · ${calibration.horizontalFov.toFixed(1)}° × ${calibration.verticalFov.toFixed(1)}° · error ${calibration.rmsError.toFixed(1)}°</option>`;
-  }).join("");
+    const place = calibration.locationName || (Number.isFinite(calibration.latitude) ? `${calibration.latitude.toFixed(2)}, ${calibration.longitude.toFixed(2)}` : "Unknown location");
+    const option = document.createElement("option");
+    option.value = calibration.id;
+    option.textContent = `${place} · ${date} · ${calibration.horizontalFov.toFixed(1)}° × ${calibration.verticalFov.toFixed(1)}° · error ${calibration.rmsError.toFixed(1)}°`;
+    arCalibrationSelect.append(option);
+  }
   arCalibrationSelect.value = selectedId;
 }
 
@@ -300,17 +431,18 @@ async function loadTerrain() {
 }
 
 function buildArTargets() {
-  return ECLIPSE_PHASES.map((phase) => ({
+  if (!state.eclipse) return [];
+  return eclipseArPhases(state.eclipse).map((phase) => ({
     ...phase,
-    ...sunPositionAt(new Date(phase.time)),
-    timeLabel: phase.displayTime || new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Madrid" }).format(new Date(phase.time)),
+    ...sunPositionAt(phase.date),
+    timeLabel: phase.displayTime || formatLocationTime(phase.date, false, true),
   }));
 }
 
 function createArMarkers() {
   state.ar.targets = buildArTargets();
   arMarkers.innerHTML = state.ar.targets.map((target, index) => {
-    const classes = ["ar-marker", target.totality ? "totality" : ""].filter(Boolean).join(" ");
+    const classes = ["ar-marker", target.primary ? "primary" : ""].filter(Boolean).join(" ");
     return `<div class="${classes}" data-target="${index}"><div class="ar-marker-dot"></div><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel} · ${target.azimuth.toFixed(1)}° / ${target.elevation.toFixed(1)}°</small></div></div>`;
   }).join("");
 }
@@ -361,7 +493,7 @@ function renderArOverlay() {
   const horizontalFov = state.ar.horizontalFov;
   const verticalFov = state.ar.verticalFov;
   const screenBounds = { left: 0.08, right: 0.92, top: 0.12, bottom: 0.68 };
-  let totalityScreenPosition = null;
+  let primaryScreenPosition = null;
 
   arMarkers.querySelectorAll(".ar-marker").forEach((marker) => {
     const target = state.ar.targets[Number(marker.dataset.target)];
@@ -375,16 +507,16 @@ function renderArOverlay() {
     marker.style.left = `${screenX * 100}%`;
     marker.style.top = `${screenY * 100}%`;
     marker.style.opacity = visible ? "1" : "0";
-    if (target.totality) totalityScreenPosition = { x: screenX, y: screenY, visible, bearingDelta, elevationDelta };
+    if (target.primary) primaryScreenPosition = { x: screenX, y: screenY, visible, bearingDelta, elevationDelta };
   });
 
-  if (!totalityScreenPosition || totalityScreenPosition.visible || state.ar.calibrationStep !== null) {
+  if (!primaryScreenPosition || primaryScreenPosition.visible || state.ar.calibrationStep !== null) {
     arOffscreenArrow.hidden = true;
     return;
   }
   const arrowOrigin = { x: 0.5, y: 0.42 };
-  const dx = totalityScreenPosition.bearingDelta / horizontalFov;
-  const dy = -totalityScreenPosition.elevationDelta / verticalFov;
+  const dx = primaryScreenPosition.bearingDelta / horizontalFov;
+  const dy = -primaryScreenPosition.elevationDelta / verticalFov;
   const horizontalScale = Math.abs(dx) < 0.0001 ? Infinity : dx > 0 ? (screenBounds.right - arrowOrigin.x) / dx : (screenBounds.left - arrowOrigin.x) / dx;
   const verticalScale = Math.abs(dy) < 0.0001 ? Infinity : dy > 0 ? (screenBounds.bottom - arrowOrigin.y) / dy : (screenBounds.top - arrowOrigin.y) / dy;
   const scale = Math.max(0, Math.min(horizontalScale, verticalScale));
@@ -605,6 +737,7 @@ function finishSunCalibration() {
     createdAt: new Date().toISOString(),
     latitude: state.observer.lat,
     longitude: state.observer.lng,
+    locationName: state.locationName,
     headingOffset: headingFit.offset,
     pitchOffset: pitchFit.offset,
     horizontalFov,
@@ -697,17 +830,69 @@ function setObserver(latlng, message, fit = false) {
   updateCalculations({ fit });
 }
 
-function locateUser() {
+function locateUser(fromGate = false) {
   if (!navigator.geolocation) {
-    setObserver(GIJON, "Geolocation unavailable; using central Gijón.", true);
+    const message = "This browser does not provide geolocation. Search for a place instead.";
+    if (fromGate) gateStatus.textContent = message;
+    else statusOutput.textContent = message;
     return;
   }
-  statusOutput.textContent = "Finding your location…";
+  if (fromGate) gateStatus.textContent = "Requesting your location…";
+  else statusOutput.textContent = "Finding your location…";
   navigator.geolocation.getCurrentPosition(
-    (position) => setObserver({ lat: position.coords.latitude, lng: position.coords.longitude }, `Using your location (accuracy ±${Math.round(position.coords.accuracy)} m).`, true),
-    () => setObserver(GIJON, "Location permission unavailable; using central Gijón.", true),
+    (position) => activateLocation({
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      name: `Current location (±${Math.round(position.coords.accuracy)} m)`,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
+    () => {
+      locationGate.hidden = false;
+      gateStatus.textContent = "Location permission was unavailable. Search for a city or place instead.";
+    },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
   );
+}
+
+async function searchPlaces(query) {
+  const params = new URLSearchParams({ name: query, count: "6", language: navigator.language?.split("-")[0] || "en", format: "json" });
+  const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params}`);
+  if (!response.ok) throw new Error(`Place search returned ${response.status}`);
+  const data = await response.json();
+  return Array.isArray(data.results) ? data.results : [];
+}
+
+function renderPlaceResults(results) {
+  placeResults.replaceChildren();
+  if (!results.length) {
+    gateStatus.textContent = "No matching places found. Try a broader name.";
+    return;
+  }
+  gateStatus.textContent = "Choose the intended place:";
+  for (const result of results) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "place-result";
+    const title = document.createElement("span");
+    title.textContent = result.name;
+    const detail = document.createElement("small");
+    detail.textContent = [result.admin1, result.country].filter(Boolean).join(", ");
+    button.append(title, detail);
+    button.addEventListener("click", () => activateLocation({ lat: result.latitude, lng: result.longitude, name: [result.name, result.country_code].filter(Boolean).join(", "), timezone: result.timezone }));
+    placeResults.append(button);
+  }
+}
+
+function prepareLocationGate() {
+  try {
+    const lastLocation = JSON.parse(localStorage.getItem(LAST_LOCATION_STORAGE_KEY) || "null");
+    if (lastLocation && Number.isFinite(lastLocation.lat) && Number.isFinite(lastLocation.lng)) {
+      lastLocationChoice = lastLocation;
+      lastLocationButton.hidden = false;
+      lastLocationButton.textContent = `Use last location: ${lastLocation.name || `${lastLocation.lat.toFixed(3)}, ${lastLocation.lng.toFixed(3)}`}`;
+    }
+  } catch { /* ignore unavailable or malformed storage */ }
+  lastLocationButton.addEventListener("click", () => { if (lastLocationChoice) activateLocation(lastLocationChoice); });
 }
 
 function inspectPoint(latlng) {
@@ -729,7 +914,23 @@ function inspectPoint(latlng) {
 }
 
 dateTimeInput.addEventListener("change", () => updateCalculations());
-document.querySelector("#locate-button").addEventListener("click", locateUser);
+document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
+document.querySelector("#gate-locate").addEventListener("click", () => locateUser(true));
+document.querySelector("#place-search-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const query = document.querySelector("#place-search").value.trim();
+  if (query.length < 2) {
+    gateStatus.textContent = "Enter at least two characters.";
+    return;
+  }
+  gateStatus.textContent = "Searching…";
+  placeResults.replaceChildren();
+  try {
+    renderPlaceResults(await searchPlaces(query));
+  } catch (error) {
+    gateStatus.textContent = `Place search unavailable: ${error.message}`;
+  }
+});
 document.querySelector("#ar-button").addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
 document.querySelector("#ar-open-calibration").addEventListener("click", () => {
@@ -766,7 +967,15 @@ arFov.addEventListener("input", () => {
   arFovValue.textContent = `${arFov.value}°`;
   renderArOverlay();
 });
-document.querySelector("#gijon-button").addEventListener("click", () => setObserver(GIJON, "Using central Gijón.", true));
+document.querySelector("#choose-location-button").addEventListener("click", () => { locationGate.hidden = false; });
+document.querySelector("#next-eclipse").addEventListener("click", () => {
+  if (!state.eclipse) return;
+  findAndSelectEclipse({ startDate: new Date(eventDate(state.eclipse.peak).getTime() + 24 * 3600000), fit: true });
+});
+document.querySelector("#next-central-eclipse").addEventListener("click", () => {
+  if (!state.eclipse) return;
+  findAndSelectEclipse({ startDate: new Date(eventDate(state.eclipse.peak).getTime() + 24 * 3600000), centralOnly: true, fit: true });
+});
 document.querySelectorAll(".profile-ranges button").forEach((button) => {
   button.addEventListener("click", () => {
     state.profileRangeKm = Number(button.dataset.range);
@@ -780,18 +989,5 @@ setLocationButton.addEventListener("click", () => {
   setLocationButton.textContent = state.settingLocation ? "Tap a map location…" : "Set observer on map";
   statusOutput.textContent = state.settingLocation ? "Tap the map to place the observer." : "Observer placement cancelled.";
 });
-observerMarker.on("dragend", (event) => setObserver(event.target.getLatLng(), "Observer moved to"));
-map.on("click", (event) => {
-  if (state.settingLocation) {
-    state.settingLocation = false;
-    setLocationButton.classList.remove("active");
-    setLocationButton.textContent = "Set observer on map";
-    setObserver(event.latlng, "Observer set to");
-  } else {
-    inspectPoint(event.latlng);
-  }
-});
-
-updateCalculations({ fit: true });
 refreshCalibrationSelect();
-locateUser();
+prepareLocationGate();
