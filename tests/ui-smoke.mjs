@@ -141,9 +141,10 @@ try {
 
   await page.locator(".saved-location-open").first().click();
   await page.locator("#terrain-result").filter({ hasText: /OK|Concerning|Obstructed/ }).waitFor();
-  await page.locator(".terrain-details summary").click();
-  if (await page.locator("#terrain-profile rect").count() < 1) throw new Error("Expected a distance-based low-cloud strip in the terrain profile");
+  await page.locator(".sightline-card summary").click();
+  if (await page.locator("#profile-cloud-strip rect").count() < 1) throw new Error("Expected a distance-based low-cloud strip in the sightline profile");
   if (!await page.locator("#profile-cloud-caption").isVisible()) throw new Error("Expected a visible explanation above the low-cloud strip");
+  if (!await page.locator("#profile-cloud-strip").isVisible()) throw new Error("Expected a dedicated visible low-cloud strip");
   if (!/not cumulative/i.test(await page.locator("#profile-cloud-caption").textContent())) throw new Error("Cloud strip should explicitly say that it is not cumulative");
   if (!await page.locator("#profile-cloud-key").isVisible()) throw new Error("Expected the terrain profile low-cloud legend");
   if (await page.locator(".distance-label").count() !== 0) throw new Error("Distance-ring labels should be removed");

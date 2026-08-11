@@ -79,6 +79,7 @@ const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
 const profileCloudKey = document.querySelector("#profile-cloud-key");
 const profileCloudCaption = document.querySelector("#profile-cloud-caption");
+const profileCloudStrip = document.querySelector("#profile-cloud-strip");
 const profileCloudRefresh = document.querySelector("#profile-cloud-refresh");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
@@ -983,20 +984,23 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const legacyCloudSummary = !cloudProfile.length && digestCandidate?.weather?.target && !digestCandidate.lowCloudDistanceProfile?.length;
   profileCloudKey.hidden = cloudProfile.length === 0;
   profileCloudCaption.hidden = cloudProfile.length === 0;
+  profileCloudStrip.hidden = cloudProfile.length === 0;
   profileCloudRefresh.hidden = !legacyCloudSummary;
   const cloudProfileEndKm = cloudProfile.length ? Math.max(...cloudProfile.map((sample) => sample.distanceKm)) : 0;
   if (cloudProfile.length) profileCloudCaption.querySelector("span").textContent = `Per-distance mean across ±5°—not cumulative. Sampled to ${cloudProfileEndKm} km; lighter is clearer.`;
-  const cloudY = height - 29;
   const cloudStrip = cloudProfile.map((sample, index) => {
     const previous = cloudProfile[index - 1];
     const next = cloudProfile[index + 1];
     const startDistance = previous ? (previous.distanceKm + sample.distanceKm) / 2 : 0;
     const endDistance = next ? (sample.distanceKm + next.distanceKm) / 2 : Math.min(maxDistanceKm, sample.distanceKm + 1.25);
-    return `<rect x="${x(startDistance).toFixed(1)}" y="${cloudY}" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="12" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
+    return `<rect x="${x(startDistance).toFixed(1)}" y="1" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="16" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
   }).join("");
   const unsampledStartKm = Math.min(maxDistanceKm, cloudProfileEndKm + 1.25);
   const unsampledCloud = cloudProfile.length && unsampledStartKm < maxDistanceKm
-    ? `<rect x="${x(unsampledStartKm).toFixed(1)}" y="${cloudY}" width="${(x(maxDistanceKm) - x(unsampledStartKm)).toFixed(1)}" height="12" fill="rgba(156,171,185,.28)"><title>No cloud-by-distance samples beyond ${cloudProfileEndKm} km</title></rect>`
+    ? `<rect x="${x(unsampledStartKm).toFixed(1)}" y="1" width="${(x(maxDistanceKm) - x(unsampledStartKm)).toFixed(1)}" height="16" fill="rgba(156,171,185,.28)"><title>No cloud-by-distance samples beyond ${cloudProfileEndKm} km</title></rect>`
+    : "";
+  profileCloudStrip.innerHTML = cloudProfile.length
+    ? `<svg viewBox="0 0 ${width} 18" role="img" aria-label="Non-cumulative low-cloud percentage by distance"><text x="${pad.left - 4}" y="12" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>${cloudStrip}${unsampledCloud}</svg>`
     : "";
 
   terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres${cloudProfile.length ? ", with mean low-cloud percentage across the sampled wedge" : ""}">
@@ -1004,9 +1008,6 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
     <polygon points="${pad.left},${height - pad.bottom} ${terrainPoints} ${width - pad.right},${height - pad.bottom}" fill="rgba(143,166,184,.22)"/>
     <polyline points="${terrainPoints}" fill="none" stroke="#8fa6b8" stroke-width="2"/>
     <polyline points="${rayPoints}" fill="none" stroke="#ffcf4a" stroke-width="2.5"/>
-    ${cloudStrip}
-    ${unsampledCloud}
-    ${cloudProfile.length ? `<text x="${pad.left - 4}" y="${cloudY + 9}" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>` : ""}
     <text x="${pad.left}" y="${height - 5}" fill="#9cabb9" font-size="8">0 km</text>
     <text x="${width - pad.right}" y="${height - 5}" fill="#9cabb9" font-size="8" text-anchor="end">${maxDistanceKm} km</text>
   </svg>`;

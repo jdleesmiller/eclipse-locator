@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-visuals3" />
+    <link rel="stylesheet" href="styles.css?v=20260812-profile4" />
   </head>
   <body>
     <main>
@@ -97,19 +97,21 @@
             <span id="terrain-result" class="result-badge">Loading…</span>
           </div>
           <p id="terrain-note" class="note">Sampling terrain along the ray…</p>
-          <details class="terrain-details">
-            <summary>View terrain profile</summary>
-            <div class="profile-ranges" role="group" aria-label="Terrain profile distance">
-              <button type="button" data-range="5" class="active">First 5 km</button>
-              <button type="button" data-range="20">20 km</button>
-              <button type="button" data-range="60">60 km</button>
-            </div>
-            <p id="profile-cloud-caption" class="profile-cloud-caption" hidden><strong>Low cloud along the sightline</strong><span>Per-distance mean across ±5°—not cumulative. Lighter is clearer.</span></p>
-            <p id="profile-cloud-refresh" class="note" hidden>Refresh this saved-place comparison to add a non-cumulative cloud-by-distance strip.</p>
-            <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
-            <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><span id="profile-cloud-key" class="cloud-key" hidden>Low cloud</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles</a></div>
-          </details>
         </div>
+
+        <details class="sightline-card">
+          <summary><h2>Sightline profile</h2></summary>
+          <div class="profile-ranges" role="group" aria-label="Sightline profile distance">
+            <button type="button" data-range="5" class="active">First 5 km</button>
+            <button type="button" data-range="20">20 km</button>
+            <button type="button" data-range="60">60 km</button>
+          </div>
+          <p id="profile-cloud-caption" class="profile-cloud-caption" hidden><strong>Low cloud along the sightline</strong><span>Per-distance mean across ±5°—not cumulative. Lighter is clearer.</span></p>
+          <div id="profile-cloud-strip" class="profile-cloud-strip" hidden></div>
+          <p id="profile-cloud-refresh" class="note" hidden>Refresh this saved-place comparison to add a non-cumulative cloud-by-distance strip.</p>
+          <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
+          <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><span id="profile-cloud-key" class="cloud-key" hidden>Low cloud</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles</a></div>
+        </details>
 
         <details class="technical-details">
           <summary>Technical details</summary>
@@ -191,6 +193,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260812-cloudprofile1"></script>
-    <script src="app.js?v=20260812-visuals3"></script>
+    <script src="app.js?v=20260812-profile4"></script>
   </body>
 </html>
