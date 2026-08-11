@@ -24,14 +24,36 @@ AEMET OpenData itself is not used. Its July 2025 FAQ says numerical-model output
 
 ## Browser architecture
 
-No backend or API key is currently required:
+The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript response used for numeric point sampling, so numeric corridor analysis uses the small proxy in `server/`:
 
-- `weather/aemet-client.js` — WMS overlay configuration and rate-limited-friendly JSONP point access.
+- `weather/aemet-client.js` — WMS overlay configuration and batched proxy access.
 - `weather/corridor-analysis.js` — geodesic ray construction, 2.5 km sampling, component metrics and experimental scoring.
 - `weather/digest.js` — JSON and Markdown digest generation.
 - `data/candidates.js` — editable Asturias candidate list.
 
-Numeric analysis is deliberately on demand. Six candidates × 21 points × two fields produces 252 small `GetFeatureInfo` requests, limited to eight concurrent requests and processed one candidate at a time. Moving the map does not trigger new weather requests.
+Numeric analysis is deliberately on demand. The browser makes six batched proxy requests. The proxy resolves six candidates × 21 points × two fields as 252 small AEMET `GetFeatureInfo` requests with a concurrency limit of ten and a five-minute in-memory cache. Moving the map does not trigger new weather requests.
+
+## Deploy the Google Cloud Run proxy
+
+From the repository root:
+
+```sh
+gcloud run deploy eclipse-weather-proxy \
+  --source server \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --env-vars-file server/env.yaml
+```
+
+Copy the resulting HTTPS service URL into `config.js`, without a trailing slash, then deploy the static site to GitHub Pages. No API key or secret is required. The proxy validates fields, valid times, point counts, origins, and an Asturias-area bounding box.
+
+For local end-to-end testing, start the proxy separately:
+
+```sh
+PORT=8787 node server/server.js
+```
+
+Then open `http://localhost:8080/?weatherProxy=http://localhost:8787`. The query parameter is a development convenience; production should use `config.js`.
 
 ## Metrics and score
 
@@ -55,9 +77,9 @@ This score is only a compact sorting aid. Raw components remain visible and shou
 - Cloud-base is available as a visual overlay, but line-of-sight/cloud-base intersection metrics are not in the urgent first slice.
 - The 18:25–18:30 UTC eclipse instant is represented by the 18:00 or 19:00 hourly model field; no time interpolation is performed.
 - Forecasts are model output, not observations, and can change markedly between runs.
-- AEMET could change or restrict the AMA endpoint. The retrieval interface can later point to a Google Cloud Run JSON proxy without changing corridor analysis or UI code.
+- AEMET could change or restrict the AMA endpoint. Only the small Cloud Run proxy should need updating if the upstream interface changes.
 
-If a proxy becomes necessary, it should fetch/cache a regional subset for longitude −6.3…−4.5 and latitude 42.7…44.0, attach an explicit model-run identifier if obtainable, and return compact point/grid JSON. Keep the AEMET API key in a Cloud Run environment variable only if a future authenticated source requires one.
+The current proxy allows a slightly wider box (longitude −7…−4, latitude 42.5…44.2) because a 50 km WNW sightline from Avilés extends beyond the initial −6.3 longitude boundary. A future gridded-data backend should attach an explicit model-run identifier if obtainable. Keep any future AEMET API key in a Cloud Run environment variable only.
 
 ## References
 

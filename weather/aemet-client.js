@@ -1,6 +1,7 @@
 (function () {
   const WMS_URL = "https://ama.aemet.es/geoserver/wms";
   const TEST_MODE = new URLSearchParams(window.location.search).get("test") === "1";
+  const PROXY_URL = String(new URLSearchParams(window.location.search).get("weatherProxy") || window.ECLIPSE_WEATHER_PROXY_URL || "").replace(/\/$/, "");
   const LAYERS = {
     total: { label: "Total cloud", name: "ama_netcdf:ama_pen_cob_nub", unit: "%" },
     low: { label: "Low cloud", name: "ama_netcdf:ama_pen_cob_nub_bajas", unit: "%" },
@@ -60,6 +61,29 @@
     });
   }
 
+  async function pointValues(kinds, points, validTime) {
+    if (TEST_MODE) {
+      return Object.fromEntries(kinds.map((kind) => [kind, points.map((point) => testValue(kind, point.lat, point.lng))]));
+    }
+    if (!PROXY_URL) throw new Error("weather proxy is not configured; add its Cloud Run URL to config.js");
+    const params = new URLSearchParams({
+      fields: kinds.join(","),
+      time: validTime,
+      points: points.map((point) => `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`).join(";"),
+    });
+    const response = await fetch(`${PROXY_URL}/weather-points?${params}`);
+    if (!response.ok) {
+      let detail = "";
+      try { detail = (await response.json()).error || ""; } catch { /* response was not JSON */ }
+      throw new Error(`weather proxy returned ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    const data = await response.json();
+    for (const kind of kinds) {
+      if (!Array.isArray(data.values?.[kind]) || data.values[kind].length !== points.length) throw new Error(`weather proxy returned incomplete ${kind} cloud data`);
+    }
+    return data.values;
+  }
+
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, wmsLayerOptions, pointValue });
+  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, pointValue, pointValues });
 }());

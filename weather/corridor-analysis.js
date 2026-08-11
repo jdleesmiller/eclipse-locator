@@ -21,29 +21,12 @@
     };
   }
 
-  async function mapLimit(items, limit, callback) {
-    const results = new Array(items.length);
-    let cursor = 0;
-    async function worker() {
-      while (cursor < items.length) {
-        const index = cursor;
-        cursor += 1;
-        results[index] = await callback(items[index], index);
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-    return results;
-  }
-
   async function analyzeCandidate(candidate, azimuthDeg, validTime) {
     const distances = Array.from({ length: Math.floor(MAX_DISTANCE_KM / SAMPLE_SPACING_KM) + 1 }, (_, index) => index * SAMPLE_SPACING_KM);
     const points = distances.map((distance) => destination(candidate, azimuthDeg, distance));
-    const requests = points.flatMap((point, index) => [
-      { kind: "total", point, index }, { kind: "low", point, index },
-    ]);
-    const values = await mapLimit(requests, 8, (request) => EclipseWeather.pointValue(request.kind, request.point.lat, request.point.lng, validTime));
-    const total = [], low = [];
-    requests.forEach((request, index) => (request.kind === "total" ? total : low)[request.index] = values[index]);
+    const values = await EclipseWeather.pointValues(["total", "low"], points, validTime);
+    const total = values.total;
+    const low = values.low;
     const metrics = {
       cloudAtObserverPct: Math.round(total[0]),
       lowCloudAtObserverPct: Math.round(low[0]),

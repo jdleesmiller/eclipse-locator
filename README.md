@@ -14,7 +14,7 @@ python3 -m http.server 8080
 
 Then open <http://localhost:8080>. An internet connection is still needed for the Leaflet, SunCalc and Astronomy Engine CDN files, OpenStreetMap tiles, place search and terrain elevation samples.
 
-Cloud overlays and live site comparison also require access to `https://ama.aemet.es`. No AEMET API key is required for the current public WMS integration.
+Cloud overlays require access to `https://ama.aemet.es`. Live numeric site comparison additionally requires the small Google Cloud Run proxy described in [WEATHER.md](WEATHER.md). No AEMET API key is required.
 
 For a desktop interaction harness, open <http://localhost:8080/?test=1>. Test mode selects a fixed Gijón location and simulates camera/orientation readiness plus consistent calibration readings. It is useful for checking the AR panels and five-step calibration wizard, but does not test real camera, compass or iOS permission behaviour.
 
