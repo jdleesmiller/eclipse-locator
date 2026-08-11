@@ -1,7 +1,8 @@
 (function () {
-  // Shortlist pinned from the Principality of Asturias/FICYT official viewing-site
-  // feed on 11 August 2026. Keeping this local avoids making forecast analysis
-  // depend on another service at runtime. The official feed contains 78 sites.
+  // Six sites are pinned from the Principality of Asturias/FICYT official
+  // viewing-site feed on 11 August 2026; Monte Naranco is an additional
+  // Oviedo municipal observation site. Keeping these local avoids another runtime
+  // dependency. The official feed contains 78 sites.
   // Source: https://eclipseasturias2026.ficyt.es/api/eclipse_observation_spots.php
   window.ECLIPSE_CANDIDATE_SOURCE = {
     label: "Official Eclipse Asturias viewing sites",
@@ -46,6 +47,20 @@
       accessibility: "A special access and traffic arrangement is planned.",
       transportFromGijon: "The special plan lists late Oviedo–Gijón services in both directions at 23:30, 00:00, 00:30 and 01:00; allow for the local connection to the park.",
       officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=oviedo",
+    },
+    {
+      candidateId: "monte-naranco-cima",
+      name: "Explanada de la cima · Monte Naranco",
+      municipality: "Oviedo",
+      lat: 43.3831698,
+      lng: -5.8674314,
+      capacity: null,
+      totalitySeconds: 108,
+      siteStatus: "Oviedo municipal observation site · additional to the FICYT 78-site list",
+      accessibility: "Private vehicles will be stopped at a control point by the Ules car park because the summit road has limited capacity, little parking and few pavements.",
+      transportFromGijon: "Travel to Oviedo, then use the A2 shuttle from Avenida de Galicia 4169 beside Villa Magdalena. Uphill departures: 16:30, 17:30 and 18:30. Return trips run on demand from 21:30, with the last no later than 23:15; normal ticket/CTA fares apply.",
+      officialUrl: "https://www.oviedo.es/de/w/el-ayuntamiento-de-oviedo-habilitar%C3%A1-un-servicio-de-lanzadera-de-autobuses-urbanos-para-subir-al-naranco-el-d%C3%ADa-del-eclipse",
+      sourceLabel: "Oviedo council shuttle notice",
     },
     {
       officialId: "nava",

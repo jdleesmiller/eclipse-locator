@@ -38,7 +38,8 @@ try {
   console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
   await page.locator("#analyze-weather").click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
-  if (await page.locator(".weather-result").count() !== 6) throw new Error("Expected six weather candidate results");
+  if (await page.locator(".weather-result").count() !== 7) throw new Error("Expected seven weather candidate results");
+  if (await page.locator(".weather-result").filter({ hasText: "Monte Naranco" }).count() !== 1) throw new Error("Expected a Monte Naranco candidate result");
   await page.locator("#weather-status").filter({ hasText: "Comparison complete" }).waitFor();
   await page.locator("#weather-digest").waitFor({ state: "visible" });
   await page.locator("#weather-digest").locator("summary").click();

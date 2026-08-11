@@ -302,7 +302,9 @@ function renderWeatherResults(results) {
     const trend = result.trend.classification;
     const trendLabel = trend === "unavailable" ? "no previous digest" : trend;
     const placeLabel = result.municipality ? `${result.name} · ${result.municipality}` : result.name;
-    const officialSiteDetails = result.officialUrl ? `<details class="site-access-detail"><summary>Official site and transport</summary><p>${result.accessibility}</p><p><b>From Gijón:</b> ${result.transportFromGijon}</p><p><a href="${result.officialUrl}" target="_blank" rel="noreferrer">Official site details</a> · <a href="${window.ECLIPSE_CANDIDATE_SOURCE.mobilityUrl}" target="_blank" rel="noreferrer">live mobility plan</a></p></details>` : "";
+    const sourceLabel = result.sourceLabel || "Official site details";
+    const siteStatus = result.siteStatus ? `<p><b>Status:</b> ${result.siteStatus}</p>` : "";
+    const officialSiteDetails = result.officialUrl ? `<details class="site-access-detail"><summary>Viewing site and transport</summary>${siteStatus}<p>${result.accessibility}</p><p><b>From Gijón:</b> ${result.transportFromGijon}</p><p><a href="${result.officialUrl}" target="_blank" rel="noreferrer">${sourceLabel}</a> · <a href="${window.ECLIPSE_CANDIDATE_SOURCE.mobilityUrl}" target="_blank" rel="noreferrer">live mobility plan</a></p></details>` : "";
     item.innerHTML = `<button class="weather-result-main" type="button"><strong>${placeLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
       <small><b>18:27 estimate:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
       ${officialSiteDetails}

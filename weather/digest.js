@@ -71,6 +71,7 @@
       terrainSampling: { rayOffsetsDeg: EclipseWeather.TERRAIN_RAY_OFFSETS_DEG, classificationHalfWidthDeg: EclipseWeather.TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG, contextHalfWidthDeg: 5, nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, eyeHeightM: EclipseWeather.TERRAIN_EYE_HEIGHT_M, earthCurvature: true, atmosphericRefraction: false, safetyMarginDeg: 2 },
       candidates: candidates.map((candidate) => ({
         name: candidate.name, municipality: candidate.municipality, officialId: candidate.officialId,
+        candidateId: candidate.candidateId, siteStatus: candidate.siteStatus,
         officialUrl: candidate.officialUrl, lat: candidate.lat, lng: candidate.lng,
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },

@@ -2,7 +2,7 @@
 
 A small, mobile-first map for finding the next solar eclipse visible from a chosen location and exploring the Sun's sightline. The static frontend uses Leaflet, OpenStreetMap, SunCalc, Astronomy Engine and Open-Meteo services with no frontend build step or API keys.
 
-For the 12 August 2026 eclipse it also provides live AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays, plus on-demand cloud-wedge and terrain-horizon comparisons for a six-site shortlist drawn from the official Asturias viewing sites. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
+For the 12 August 2026 eclipse it also provides live AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays, plus on-demand cloud-wedge and terrain-horizon comparisons for a seven-site shortlist. Six are drawn from the official Asturias viewing sites; Oviedo's municipal observation site at the summit of Monte Naranco is included as a clearly labelled additional candidate. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
 
 ## Run locally
 
@@ -40,9 +40,9 @@ Local eclipse circumstances are calculated using [Astronomy Engine](https://gith
 
 The terrain profile samples 100 points from public AWS Terrain Tiles via the same caching proxy used by the candidate comparison. The first 5 km is sampled about every 91 m; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. Both terrain views use the same observer elevation, nominal 1.7 m eye height and spherical-Earth curvature assumptions, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
 
-The six-site weather comparison reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°, using the same terrain source and geometry. The ±0.5° horizon drives clearance and classification; ±5° is context only. It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score.
+The seven-site weather comparison reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°, using the same terrain source and geometry. The ±0.5° horizon drives clearance and classification; ±5° is context only. It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score.
 
-The shortlist coordinates and site names are pinned from the [official Eclipse Asturias observation-point feed](https://eclipseasturias2026.ficyt.es/puntos_observacion.php?lang=en), checked on 11 August 2026. The app links to the live official mobility plan because special services and access restrictions may change.
+The six regional shortlist coordinates and site names are pinned from the [official Eclipse Asturias observation-point feed](https://eclipseasturias2026.ficyt.es/puntos_observacion.php?lang=en), checked on 11 August 2026. Monte Naranco uses the summit location published with [Oviedo's municipal shuttle notice](https://www.oviedo.es/de/w/el-ayuntamiento-de-oviedo-habilitar%C3%A1-un-servicio-de-lanzadera-de-autobuses-urbanos-para-subir-al-naranco-el-d%C3%ADa-del-eclipse). The app links to the live official mobility plan because special services and access restrictions may change.
 
 Elevation data: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/); the source mosaic uses EU-DEM in Asturias and other documented sources elsewhere.
 
