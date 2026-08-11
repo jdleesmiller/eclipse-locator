@@ -54,12 +54,17 @@ try {
   if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
   if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
+  if (await page.locator("#map-close-button svg").count() !== 1) throw new Error("Expected an SVG close control on the map");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
   await page.evaluate(() => history.back());
   await page.locator("#location-gate").waitFor({ state: "visible" });
   await page.evaluate(() => history.forward());
   await page.locator("#location-gate").waitFor({ state: "hidden" });
   await page.locator("#event-kind").waitFor({ state: "visible" });
+  await page.locator("#map-close-button").click();
+  await page.locator("#location-gate").waitFor({ state: "visible" });
+  await page.evaluate(() => history.back());
+  await page.locator("#location-gate").waitFor({ state: "hidden" });
   await page.locator("#cloud-result").filter({ hasText: "% low" }).waitFor();
   await page.locator("#choose-location-button").click();
   await page.locator("#saved-locations-card").waitFor({ state: "visible" });

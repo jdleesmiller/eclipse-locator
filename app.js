@@ -1732,10 +1732,13 @@ arFov.addEventListener("input", () => {
   arFovValue.textContent = `${arFov.value}°`;
   renderArOverlay();
 });
-document.querySelector("#choose-location-button").addEventListener("click", () => {
+function showLocationGate() {
   locationGate.hidden = false;
   history.pushState({ view: "gate" }, "", window.location.href);
-});
+}
+
+document.querySelector("#choose-location-button").addEventListener("click", showLocationGate);
+document.querySelector("#map-close-button").addEventListener("click", showLocationGate);
 document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
 document.querySelector("#share-button").addEventListener("click", shareCurrentView);
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });

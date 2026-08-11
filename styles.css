@@ -53,10 +53,17 @@ button, input { font: inherit; }
 }
 
 .topbar h1 { margin: 0; font-size: 21px; line-height: 1.1; letter-spacing: -0.02em; }
+.topbar > div:first-child { min-width: 0; }
 .eyebrow { margin: 0 0 3px; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: 0.13em; }
 .icon-button { pointer-events: auto; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; background: rgba(7,21,37,.88); color: white; font-size: 26px; }
 .icon-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .top-actions { display: flex; gap: 8px; pointer-events: auto; }
+
+@media (max-width: 420px) {
+  .top-actions { gap: 6px; }
+  .top-actions .icon-button { width: 42px; height: 42px; min-height: 42px; }
+  .topbar h1 { font-size: 19px; }
+}
 
 .panel {
   position: absolute;
