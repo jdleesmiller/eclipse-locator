@@ -18,7 +18,7 @@ Cloud overlays require access to `https://ama.aemet.es`. Live numeric site compa
 
 For a desktop interaction harness, open <http://localhost:8080/?test=1>. Test mode selects a fixed Gijón location and simulates camera/orientation readiness plus consistent calibration readings. It is useful for checking the AR panels and five-step calibration wizard, but does not test real camera, compass or iOS permission behaviour.
 
-With the local server running, the automated mobile-sized smoke test can be run with `npm run test:ui`. It uses the installed Google Chrome, reports browser console errors, verifies SunCalc against Astronomy Engine at 18:00, 18:27 and 19:00 UTC, exercises the weather digest and filtered-Sun calibration flow, and writes screenshots to `test-artifacts/`.
+With the local server running, the automated mobile-sized smoke test can be run with `npm run test:ui`. It uses the installed Google Chrome, reports browser console errors, checks Astronomy Engine against both SunCalc and the supplied IMCCE altitudes, exercises the weather digest and filtered-Sun calibration flow, and writes screenshots to `test-artifacts/`.
 
 To view it on an iPhone on the same Wi-Fi network, find the computer's local IP address and open `http://COMPUTER-IP:8080` on the phone. The map and manual observer placement work this way, but browser geolocation generally requires HTTPS (except on `localhost`). For reliable phone geolocation, deploy to an HTTPS host such as GitHub Pages or serve locally with a trusted HTTPS certificate.
 
@@ -38,11 +38,11 @@ The repository can be published directly with GitHub Pages because all files are
 
 Local eclipse circumstances are calculated using [Astronomy Engine](https://github.com/cosinekitty/astronomy). Partial, annular and total eclipses are supported. The event maximum is used as the default map sightline and as the primary AR target; for total and annular events the central phase interval is also displayed.
 
-The terrain profile samples 100 points from the Open-Meteo Elevation API. The first 5 km is sampled about every 91 m to match the useful resolution of the 90 m Copernicus digital elevation model; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. The sightline comparison includes observer elevation, a nominal 1.7 m eye height and Earth curvature, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
+The terrain profile samples 100 points from public AWS Terrain Tiles via the same caching proxy used by the candidate comparison. The first 5 km is sampled about every 91 m; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. Both terrain views use the same observer elevation, nominal 1.7 m eye height and spherical-Earth curvature assumptions, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
 
-The six-site weather comparison performs a separate horizon calculation across the same ±5° Sun-facing wedge using public AWS Terrain Tiles (EU-DEM in Asturias). It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. This candidate comparison uses the simple geometric `atan2` angle requested for easy auditing; it intentionally excludes curvature, buildings and vegetation. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score.
+The six-site weather comparison performs a horizon calculation across the ±5° Sun-facing wedge using the same terrain source and geometry. It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score.
 
-Elevation data: [Open-Meteo](https://open-meteo.com/en/docs/elevation-api), using the Copernicus DEM.
+Elevation data: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/); the source mosaic uses EU-DEM in Asturias and other documented sources elsewhere.
 
 The experimental AR mode uses `getUserMedia()` for the rear camera and `DeviceOrientationEvent` for heading and pitch. Its phase times and Sun positions come from the calculated local eclipse. Off-screen navigation points to totality, annularity or maximum partial eclipse as appropriate. This is a directional planning aid rather than survey-grade AR. WebXR immersive AR support on iPhone Safari remains limited, so a camera-video overlay is the more portable approach.
 

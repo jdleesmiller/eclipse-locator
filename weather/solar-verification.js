@@ -10,26 +10,26 @@
   function astronomyEnginePosition(date, lat, lng) {
     const observer = new Astronomy.Observer(lat, lng, 0);
     const equatorial = Astronomy.Equator("Sun", date, observer, true, true);
-    const horizon = Astronomy.Horizon(date, observer, equatorial.ra, equatorial.dec, "normal");
+    const horizon = Astronomy.Horizon(date, observer, equatorial.ra, equatorial.dec, null);
     return { azimuthDeg: normalize(horizon.azimuth), elevationDeg: horizon.altitude };
   }
 
   function verifySunPosition(date, lat, lng) {
-    const primary = sunCalcPosition(date, lat, lng);
-    const reference = astronomyEnginePosition(date, lat, lng);
+    const primary = astronomyEnginePosition(date, lat, lng);
+    const reference = sunCalcPosition(date, lat, lng);
     const azimuthDifferenceDeg = difference(primary.azimuthDeg, reference.azimuthDeg);
     const elevationDifferenceDeg = Math.abs(primary.elevationDeg - reference.elevationDeg);
     return {
       ...primary,
-      verifiedAgainst: "Astronomy Engine 2.1.19 (normal atmospheric refraction)",
+      verifiedAgainst: "SunCalc 1.9.0 (independent approximate geometric calculation)",
       reference,
       azimuthDifferenceDeg,
       elevationDifferenceDeg,
       maximumDifferenceDeg: Math.max(azimuthDifferenceDeg, elevationDifferenceDeg),
-      convention: "Azimuth clockwise from true north; apparent elevation with standard refraction; UTC instant",
+      convention: "Astronomy Engine; azimuth clockwise from true north; geometric elevation without atmospheric refraction; UTC instant",
     };
   }
 
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { sunCalcPosition, astronomyEnginePosition, verifySunPosition });
+  Object.assign(window.EclipseWeather, { sunCalcPosition, astronomyEnginePosition, solarPosition: astronomyEnginePosition, verifySunPosition });
 }());

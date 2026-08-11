@@ -71,7 +71,7 @@ function parseRasterRequest(body) {
 function parseTerrainRequest(body) {
   const points = Array.isArray(body?.points) ? body.points.map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) })) : [];
   if (!points.length || points.length > 2500) throw new Error("provide between 1 and 2500 terrain points");
-  if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < 42.5 || lat > 44.2 || lng < -7 || lng > -4)) throw new Error("terrain points must be inside the Asturias forecast region");
+  if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -85 || lat > 85 || lng < -180 || lng > 180)) throw new Error("terrain points must use valid Web Mercator coordinates");
   return { points };
 }
 
@@ -80,8 +80,8 @@ function tilePosition(point, zoom = 11) {
   const xFloat = (point.lng + 180) / 360 * scale;
   const latRad = point.lat * Math.PI / 180;
   const yFloat = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * scale;
-  const x = Math.floor(xFloat);
-  const y = Math.floor(yFloat);
+  const x = Math.max(0, Math.min(scale - 1, Math.floor(xFloat)));
+  const y = Math.max(0, Math.min(scale - 1, Math.floor(yFloat)));
   return { zoom, x, y, pixelX: Math.max(0, Math.min(255, Math.floor((xFloat - x) * 256))), pixelY: Math.max(0, Math.min(255, Math.floor((yFloat - y) * 256))) };
 }
 
@@ -114,7 +114,7 @@ async function terrainValues(request) {
     const offset = (tile.pixelY * png.width + tile.pixelX) * 4;
     return Number((png.data[offset] * 256 + png.data[offset + 1] + png.data[offset + 2] / 256 - 32768).toFixed(1));
   });
-  return { source: "AWS Terrain Tiles (Terrarium), EU-DEM source in Asturias", zoom: 11, retrievedAt: new Date().toISOString(), tileCount: tiles.length, values };
+  return { source: "AWS Terrain Tiles (Terrarium; source dataset varies by region)", zoom: 11, retrievedAt: new Date().toISOString(), tileCount: tiles.length, values };
 }
 
 async function aemetRaster(field, time, points) {

@@ -30,7 +30,7 @@ The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript resp
 - `weather/aemet-client.js` — WMS overlay configuration and batched proxy access.
 - `weather/corridor-analysis.js` — geodesic ±5° wedge construction, 2.5 km sampling, hourly/interpolated metrics and weather scoring.
 - `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
-- `weather/solar-verification.js` — SunCalc/Astronomy Engine cross-check and coordinate conventions.
+- `weather/solar-verification.js` — authoritative Astronomy Engine geometry plus an independent SunCalc approximation check.
 - `weather/digest.js` — JSON and Markdown digest generation.
 - `data/candidates.js` — editable Asturias candidate list.
 
@@ -38,7 +38,7 @@ Map imagery remains direct from AEMET. A failed WMS tile is retried individually
 
 Numeric analysis is deliberately on demand. The browser sends all candidate wedge coordinates in one bounded request. The proxy downloads four small regional rasters—total and low cloud at 18:00 and 19:00 UTC—with two-at-a-time concurrency, three-attempt upstream retry and a five-minute in-memory cache. It then samples the requested coordinates locally. This replaces more than a thousand potential `GetFeatureInfo` calls while preserving the existing WMS pipeline and point endpoint. Moving the map does not trigger analysis.
 
-Candidate terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy downloads each unique PNG tile once, with four-at-a-time concurrency, retry and an in-memory tile cache, then decodes requested elevations locally. The first 2 km uses 100 m steps because nearby ridges dominate this low-Sun problem. This avoids rate-limiting the Open-Meteo point API; the existing one-request terrain chart for the currently selected observer remains unchanged.
+All terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy downloads each unique PNG tile once, with four-at-a-time concurrency, retry and an in-memory tile cache, then decodes requested elevations locally. The candidate wedge uses 100 m steps through the first 2 km because nearby ridges dominate this low-Sun problem. The main profile and candidate wedges share the same elevation client and the same 1.7 m eye-height and spherical-Earth-curvature functions.
 
 ## Deploy the Google Cloud Run proxy
 
@@ -82,7 +82,7 @@ This score is only a compact sorting aid. Raw components remain visible and shou
 
 ## Solar geometry check
 
-Sun azimuth is clockwise from true north. Times are UTC instants. SunCalc is checked against Astronomy Engine 2.1.19 using standard atmospheric refraction at Gijón for 18:00, 18:27 and 19:00 UTC. The automated tolerance is 0.12°: the largest current difference is about 0.101°, caused by the libraries' slightly different low-altitude refraction approximations. The approximate 280.9° / 10.3° figures belong near 18:27 UTC; at 18:00 UTC the verified position is approximately 276.30° / 15.25°.
+Astronomy Engine 2.1.19 is authoritative throughout the map, AR, weather wedges and terrain analysis. Azimuth is clockwise from true north, times are UTC instants, and elevation is geometric (no atmospheric refraction). SunCalc remains as an independent lightweight approximation check with a 0.25° guard against time-zone, longitude-sign or azimuth-convention errors. A tighter automated check compares Astronomy Engine against the supplied IMCCE altitudes at Gijón—10.29°, 10.13° and 9.97° around totality—with a 0.03° tolerance.
 
 ## Limitations and next steps
 

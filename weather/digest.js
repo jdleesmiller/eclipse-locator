@@ -62,12 +62,13 @@
       interpolation: { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: EclipseWeather.INTERPOLATION_FRACTION, label: "18:27 approximation; not an AEMET model output time" },
       sun: {
         azimuthDeg: Number(sun.azimuthDeg.toFixed(2)), elevationDeg: Number(sun.elevationDeg.toFixed(2)),
+        calculationEngine: "Astronomy Engine 2.1.19",
         verifiedAgainst: sun.verifiedAgainst, reference: sun.reference,
         azimuthDifferenceDeg: Number(sun.azimuthDifferenceDeg.toFixed(4)), elevationDifferenceDeg: Number(sun.elevationDifferenceDeg.toFixed(4)),
         convention: sun.convention,
       },
       wedge: { halfWidthDeg: EclipseWeather.WEDGE_HALF_WIDTH_DEG, rayOffsetsDeg: EclipseWeather.RAY_OFFSETS_DEG, nominalRaySpacingDeg: 2, distanceSpacingKm: EclipseWeather.SAMPLE_SPACING_KM },
-      terrainSampling: { nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, safetyMarginDeg: 2 },
+      terrainSampling: { nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, eyeHeightM: EclipseWeather.TERRAIN_EYE_HEIGHT_M, earthCurvature: true, atmosphericRefraction: false, safetyMarginDeg: 2 },
       candidates: candidates.map((candidate) => ({
         name: candidate.name, lat: candidate.lat, lng: candidate.lng,
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },

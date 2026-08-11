@@ -1,11 +1,9 @@
-/* global L, SunCalc, Astronomy */
+/* global L, Astronomy */
 
 const MAX_DISTANCE_KM = 60;
 const WEDGE_DEGREES = 4;
 const DISTANCES_KM = [5, 10, 20, 30, 50];
 const TERRAIN_SAMPLE_COUNT = 100;
-const EARTH_RADIUS_M = 6371008.8;
-const EYE_HEIGHT_M = 1.7;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
 const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
 const WEATHER_DIGEST_STORAGE_KEY = "eclipse-locator-weather-digest-v2";
@@ -150,11 +148,8 @@ function signedAngleDifference(target, current) {
 }
 
 function sunPositionAt(date) {
-  const sun = SunCalc.getPosition(date, state.observer.lat, state.observer.lng);
-  return {
-    azimuth: normalizeAngle(toDegrees(sun.azimuth) + 180),
-    elevation: toDegrees(sun.altitude),
-  };
+  const sun = EclipseWeather.solarPosition(date, state.observer.lat, state.observer.lng);
+  return { azimuth: sun.azimuthDeg, elevation: sun.elevationDeg };
 }
 
 function initializeMap() {
@@ -354,13 +349,13 @@ async function analyzeWeather() {
   weatherStatus.textContent = "Loading 18:00 and 19:00 cloud grids for seven-ray wedges…";
   try {
     const candidates = window.ECLIPSE_CANDIDATES.map((candidate) => {
-      const sun = EclipseWeather.sunCalcPosition(new Date(EclipseWeather.TARGET_TIME), candidate.lat, candidate.lng);
+      const sun = EclipseWeather.solarPosition(new Date(EclipseWeather.TARGET_TIME), candidate.lat, candidate.lng);
       return { ...candidate, azimuthDeg: sun.azimuthDeg, sunElevationDeg: sun.elevationDeg };
     });
     const cloudResults = await EclipseWeather.analyzeCandidates(candidates, state.azimuth, null, (complete, total, name) => {
       weatherStatus.textContent = complete ? `Processed cloud wedge for ${name} (${complete} of ${total})…` : "Downloading four small AEMET regional rasters…";
     });
-    weatherStatus.textContent = "Sampling the Copernicus terrain horizon, with 100 m spacing through the first 2 km…";
+    weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
     const terrainResults = await EclipseWeather.analyzeTerrain(cloudResults, (complete, total, name) => {
       weatherStatus.textContent = `Processed terrain for ${name} (${complete} of ${total})…`;
     });
@@ -507,8 +502,8 @@ function lineOfSightHeightKm(distanceKm) {
 }
 
 function terrainSampleDistances() {
-  // Spend 56 of the API's 100 points in the first 5 km: about 91 m apart,
-  // matching the source DEM's useful resolution. Space the rest evenly.
+  // Spend 56 of the profile's 100 points in the first 5 km: about 91 m apart,
+  // close to the useful source resolution. Space the rest evenly.
   const nearCount = 56;
   const near = Array.from({ length: nearCount }, (_, index) => 5 * index / (nearCount - 1));
   const farCount = TERRAIN_SAMPLE_COUNT - nearCount;
@@ -527,10 +522,7 @@ function buildSightlineSamples() {
 }
 
 function rayAltitudeM(distanceKm, observerElevationM) {
-  const distanceM = distanceKm * 1000;
-  const riseM = distanceM * Math.tan(toRadians(state.elevation));
-  const curvatureM = distanceM * distanceM / (2 * EARTH_RADIUS_M);
-  return observerElevationM + EYE_HEIGHT_M + riseM + curvatureM;
+  return EclipseWeather.solarRayAltitudeM(distanceKm, observerElevationM, state.elevation);
 }
 
 function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
@@ -574,27 +566,19 @@ async function loadTerrain() {
 
   const distances = terrainSampleDistances();
   const locations = distances.map((distance) => destinationPoint(state.observer, state.azimuth, distance));
-  const query = new URLSearchParams({
-    latitude: locations.map((point) => point[0].toFixed(6)).join(","),
-    longitude: locations.map((point) => point[1].toFixed(6)).join(","),
-  });
-
   try {
-    const response = await fetch(`https://api.open-meteo.com/v1/elevation?${query}`, { signal: controller.signal });
-    if (!response.ok) throw new Error(`Elevation service returned ${response.status}`);
-    const data = await response.json();
-    if (!Array.isArray(data.elevation) || data.elevation.length !== distances.length) throw new Error("Unexpected elevation response");
+    const elevations = await EclipseWeather.terrainValues(locations.map(([lat, lng]) => ({ lat, lng })), { signal: controller.signal });
     if (state.terrainRequest !== controller) return;
 
-    const observerElevationM = data.elevation[0];
+    const observerElevationM = elevations[0];
     state.terrainSamples = distances.map((distanceKm, index) => {
       const altitudeM = rayAltitudeM(distanceKm, observerElevationM);
       return {
         distanceKm,
         location: locations[index],
-        terrainElevationM: data.elevation[index],
+        terrainElevationM: elevations[index],
         rayAltitudeM: altitudeM,
-        clearanceM: altitudeM - data.elevation[index],
+        clearanceM: altitudeM - elevations[index],
       };
     });
 
@@ -1009,9 +993,9 @@ function updateCalculations({ fit = false } = {}) {
   const selectedDate = state.viewingDate;
   if (!(selectedDate instanceof Date) || Number.isNaN(selectedDate.getTime())) return;
 
-  const sun = SunCalc.getPosition(selectedDate, state.observer.lat, state.observer.lng);
-  state.azimuth = (toDegrees(sun.azimuth) + 180 + 360) % 360;
-  state.elevation = toDegrees(sun.altitude);
+  const sun = EclipseWeather.solarPosition(selectedDate, state.observer.lat, state.observer.lng);
+  state.azimuth = sun.azimuthDeg;
+  state.elevation = sun.elevationDeg;
 
   azimuthOutput.textContent = `${state.azimuth.toFixed(1)}°`;
   elevationOutput.textContent = `${state.elevation.toFixed(1)}°`;

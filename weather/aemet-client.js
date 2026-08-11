@@ -150,6 +150,25 @@
     return data.values;
   }
 
+  async function terrainValues(points, { signal } = {}) {
+    if (TEST_MODE) return points.map((point) => Math.round(180 + 90 * Math.sin((point.lat - 43.2) * 20) + 55 * Math.cos((point.lng + 5.7) * 18)));
+    if (!PROXY_URL) throw new Error("weather/terrain proxy is not configured; add its Cloud Run URL to config.js");
+    const response = await fetch(`${PROXY_URL}/terrain-values`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ points: points.map((point) => ({ lat: Number(point.lat.toFixed(5)), lng: Number(point.lng.toFixed(5)) })) }),
+      signal,
+    });
+    if (!response.ok) {
+      let detail = "";
+      try { detail = (await response.json()).error || ""; } catch { /* response was not JSON */ }
+      throw new Error(`terrain proxy returned ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.values) || data.values.length !== points.length) throw new Error("terrain proxy returned incomplete elevation data");
+    return data.values.map(Number);
+  }
+
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, createWmsLayer, pointValue, pointValues, rasterValues });
+  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, createWmsLayer, pointValue, pointValues, rasterValues, terrainValues });
 }());

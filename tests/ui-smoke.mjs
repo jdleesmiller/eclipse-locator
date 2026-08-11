@@ -23,9 +23,17 @@ try {
   await page.locator("#event-kind").waitFor({ state: "visible" });
   const solarChecks = await page.evaluate(() => ["2026-08-12T18:00:00.000Z", "2026-08-12T18:27:00.000Z", "2026-08-12T19:00:00.000Z"].map((time) => ({ time, ...EclipseWeather.verifySunPosition(new Date(time), 43.5322, -5.6611) })));
   for (const check of solarChecks) {
-    // The two libraries use slightly different standard-refraction approximations;
-    // the largest observed difference across these three low-Sun checks is ~0.101°.
-    if (check.maximumDifferenceDeg >= 0.12) throw new Error(`Solar verification failed at ${check.time}: ${JSON.stringify(check)}`);
+    // SunCalc is a deliberately lightweight approximation; Astronomy Engine is
+    // authoritative and the difference must remain small enough to catch convention errors.
+    if (check.maximumDifferenceDeg >= 0.25) throw new Error(`Solar verification failed at ${check.time}: ${JSON.stringify(check)}`);
+  }
+  const imcceChecks = await page.evaluate(() => [
+    ["2026-08-12T18:26:46.000Z", 10.29],
+    ["2026-08-12T18:27:41.000Z", 10.13],
+    ["2026-08-12T18:28:35.000Z", 9.97],
+  ].map(([time, expectedElevationDeg]) => ({ time, expectedElevationDeg, actual: EclipseWeather.solarPosition(new Date(time), 43.54736, -5.66353) })));
+  for (const check of imcceChecks) {
+    if (Math.abs(check.actual.elevationDeg - check.expectedElevationDeg) >= 0.03) throw new Error(`IMCCE altitude check failed at ${check.time}: ${JSON.stringify(check)}`);
   }
   console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
   await page.locator("#analyze-weather").click();
