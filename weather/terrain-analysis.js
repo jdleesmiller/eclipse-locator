@@ -5,6 +5,8 @@
   const MAX_DISTANCE_KM = 50;
   const EARTH_RADIUS_M = 6371008.8;
   const EYE_HEIGHT_M = 1.7;
+  const TERRAIN_RAY_OFFSETS_DEG = [-5, -3, -1, -0.5, -0.25, 0, 0.25, 0.5, 1, 3, 5];
+  const CLASSIFICATION_HALF_WIDTH_DEG = 0.5;
 
   function terrainDistances() {
     const values = [0];
@@ -15,7 +17,7 @@
   }
 
   function buildSamples(candidate) {
-    return EclipseWeather.RAY_OFFSETS_DEG.flatMap((offsetDeg) => terrainDistances().filter((distanceKm) => offsetDeg === 0 || distanceKm > 0).map((distanceKm) => ({
+    return TERRAIN_RAY_OFFSETS_DEG.flatMap((offsetDeg) => terrainDistances().filter((distanceKm) => offsetDeg === 0 || distanceKm > 0).map((distanceKm) => ({
       ...EclipseWeather.destination(candidate, candidate.azimuthDeg + offsetDeg, distanceKm),
       distanceKm, offsetDeg, bearingDeg: (candidate.azimuthDeg + offsetDeg + 360) % 360,
     })));
@@ -64,17 +66,31 @@
         terrainAngleDeg: terrainApparentAngleDeg(terrainElevations[index], observerElevationM, sample.distanceKm),
       }));
       const centreMax = maximum(detailed, (sample) => sample.offsetDeg === 0 && sample.distanceKm > 0);
-      const wedgeMax = maximum(detailed, (sample) => sample.distanceKm > 0);
-      const clearanceDeg = candidate.sunElevationDeg - wedgeMax.terrainAngleDeg;
+      const near025Max = maximum(detailed, (sample) => Math.abs(sample.offsetDeg) <= 0.25 && sample.distanceKm > 0);
+      const near05Max = maximum(detailed, (sample) => Math.abs(sample.offsetDeg) <= CLASSIFICATION_HALF_WIDTH_DEG && sample.distanceKm > 0);
+      const contextWedgeMax = maximum(detailed, (sample) => sample.distanceKm > 0);
+      const clearanceDeg = candidate.sunElevationDeg - near05Max.terrainAngleDeg;
       const result = {
         observerElevationM: Math.round(observerElevationM),
+        centreRayHorizonDeg: Number(centreMax.terrainAngleDeg.toFixed(2)),
+        centreRayHorizonDistanceKm: centreMax.distanceKm,
+        within025DegMaxAngleDeg: Number(near025Max.terrainAngleDeg.toFixed(2)),
+        within025DegMaxDistanceKm: near025Max.distanceKm,
+        within025DegMaxRayOffsetDeg: near025Max.offsetDeg,
+        within05DegMaxAngleDeg: Number(near05Max.terrainAngleDeg.toFixed(2)),
+        within05DegMaxDistanceKm: near05Max.distanceKm,
+        within05DegMaxRayOffsetDeg: near05Max.offsetDeg,
+        contextWedgeMaxAngleDeg: Number(contextWedgeMax.terrainAngleDeg.toFixed(2)),
+        contextWedgeMaxDistanceKm: contextWedgeMax.distanceKm,
+        contextWedgeMaxRayOffsetDeg: contextWedgeMax.offsetDeg,
         centreRayMaxAngleDeg: Number(centreMax.terrainAngleDeg.toFixed(2)),
         centreRayMaxDistanceKm: centreMax.distanceKm,
-        wedgeMaxAngleDeg: Number(wedgeMax.terrainAngleDeg.toFixed(2)),
-        blockingDistanceKm: wedgeMax.distanceKm,
-        blockingRayOffsetDeg: wedgeMax.offsetDeg,
+        wedgeMaxAngleDeg: Number(contextWedgeMax.terrainAngleDeg.toFixed(2)),
+        blockingDistanceKm: near05Max.distanceKm,
+        blockingRayOffsetDeg: near05Max.offsetDeg,
         sunElevationDeg: Number(candidate.sunElevationDeg.toFixed(2)),
         clearanceDeg: Number(clearanceDeg.toFixed(2)),
+        classificationHalfWidthDeg: CLASSIFICATION_HALF_WIDTH_DEG,
         safetyMarginDeg: 2,
         classification: classification(clearanceDeg),
         method: "AWS Terrain Tiles (EU-DEM, Terrarium z11); 1.7 m eye height and spherical-Earth curvature; no atmospheric refraction/buildings/vegetation",
@@ -86,5 +102,5 @@
   }
 
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { analyzeTerrain, terrainDistances, terrainApparentAngleDeg, solarRayAltitudeM, TERRAIN_NEAR_SPACING_KM: NEAR_SPACING_KM, TERRAIN_EYE_HEIGHT_M: EYE_HEIGHT_M });
+  Object.assign(window.EclipseWeather, { analyzeTerrain, terrainDistances, terrainApparentAngleDeg, solarRayAltitudeM, TERRAIN_RAY_OFFSETS_DEG, TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG: CLASSIFICATION_HALF_WIDTH_DEG, TERRAIN_NEAR_SPACING_KM: NEAR_SPACING_KM, TERRAIN_EYE_HEIGHT_M: EYE_HEIGHT_M });
 }());

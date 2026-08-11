@@ -47,6 +47,12 @@ try {
   if (digest.validTimes.target !== "2026-08-12T18:27:00.000Z") throw new Error("Digest target time is incorrect");
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
   if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
+  if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");
+  for (const candidate of digest.candidates) {
+    const terrain = candidate.terrain;
+    if (![terrain.centreRayHorizonDeg, terrain.within025DegMaxAngleDeg, terrain.within05DegMaxAngleDeg, terrain.contextWedgeMaxAngleDeg].every(Number.isFinite)) throw new Error(`Missing terrain horizon bands for ${candidate.name}`);
+    if (Math.abs(terrain.clearanceDeg - (terrain.sunElevationDeg - terrain.within05DegMaxAngleDeg)) > 0.02) throw new Error(`Terrain clearance does not use ±0.5° horizon for ${candidate.name}`);
+  }
   if (digest.candidates.some((candidate, index) => candidate.terrain.classification === "blocked" && index === 0)) throw new Error("A terrain-blocked candidate ranked first");
   const retryResult = await page.evaluate(() => new Promise((resolve, reject) => {
     const layer = EclipseWeather.createWmsLayer("low", "2026-08-12T18:00:00.000Z");
