@@ -28,7 +28,7 @@ AEMET OpenData itself is not used. Its July 2025 FAQ says numerical-model output
 The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript response used for numeric point sampling, so numeric corridor analysis uses the small proxy in `server/`:
 
 - `weather/aemet-client.js` — WMS overlay configuration and batched proxy access.
-- `weather/corridor-analysis.js` — geodesic ±5° wedge construction, 2.5 km sampling, hourly/interpolated metrics and weather scoring.
+- `weather/corridor-analysis.js` — geodesic ±5° wedge construction through 60 km, 2.5 km sampling, hourly/interpolated metrics and weather scoring.
 - `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
 - `weather/solar-verification.js` — authoritative Astronomy Engine geometry plus an independent SunCalc approximation check.
 - `weather/digest.js` — JSON and Markdown digest generation.
@@ -36,9 +36,9 @@ The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript resp
 
 Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
 
-Numeric analysis is deliberately on demand. For the selected eclipse time, the browser uses the two surrounding UTC-hour grids and sends the saved-location wedge coordinates in one bounded request. The proxy downloads four small regional rasters—total and low cloud at the two hours—with two-at-a-time concurrency, three-attempt upstream retry and a five-minute in-memory cache. It then samples the requested coordinates locally. This replaces more than a thousand potential `GetFeatureInfo` calls while preserving the existing WMS pipeline and point endpoint. Moving the map does not trigger analysis until the user refreshes it.
+Numeric analysis is deliberately on demand. Opening the selected place's **Sightline profile** lazily requests its cloud corridor; refreshing the saved-place comparison batches all shortlisted corridors. For the selected eclipse time, the browser uses the two surrounding UTC-hour grids and sends the wedge coordinates in one bounded request. The proxy downloads four small regional rasters—total and low cloud at the two hours—with bounded per-instance concurrency and three-attempt upstream retry, then samples the requested coordinates locally. Identical in-flight requests are coalesced, successful weather responses are cached in memory for 15 minutes, and cached data up to two hours old can be served if an upstream refresh fails. This replaces more than a thousand potential `GetFeatureInfo` calls while preserving the existing WMS pipeline and point endpoint. Merely moving the map does not fetch numeric data.
 
-All terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy downloads each unique PNG tile once, with four-at-a-time concurrency, retry and an in-memory tile cache, then decodes requested elevations locally. The candidate analysis reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°. Only the ±0.5° maximum drives clearance/classification; ±5° is contextual. It uses 100 m steps through the first 2 km because nearby ridges dominate this low-Sun problem. The main profile and candidate wedges share the same elevation client and the same 1.7 m eye-height and spherical-Earth-curvature functions.
+All terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy coalesces identical tile downloads, applies a global per-instance upstream-concurrency limit, retry and an in-memory tile cache, and rejects requests spanning more than 250 unique tiles. The candidate analysis reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°. Only the ±0.5° maximum drives clearance/classification; ±5° is contextual. It uses 100 m steps through the first 2 km because nearby ridges dominate this low-Sun problem. The main profile and candidate wedges share the same elevation client and the same 1.7 m eye-height and spherical-Earth-curvature functions.
 
 ## Deploy the Google Cloud Run proxy
 
@@ -52,7 +52,7 @@ gcloud run deploy eclipse-weather-proxy \
   --env-vars-file server/env.yaml
 ```
 
-Copy the resulting HTTPS service URL into `config.js`, without a trailing slash, then deploy the static site to GitHub Pages. No API key or secret is required. The proxy validates fields, valid times, point counts, origins and the public AEMET Iberian layer bounds. A single comparison is limited to nine locations within 300 km in the frontend and a four-degree raster region in the proxy.
+Copy the resulting HTTPS service URL into `config.js`, without a trailing slash, then deploy the static site to GitHub Pages. No API key or secret is required. The proxy validates JSON content type, fields, whole-hour forecast times, point counts, origins and the public AEMET Iberian layer bounds. Accepted weather times are limited to the current forecast window (eight hours behind to 78 hours ahead). A single comparison is limited to nine locations within 300 km in the frontend and a four-degree raster region in the proxy. Configure a Cloud Run maximum-instance cap as the hard cost ceiling; application CORS is not authentication or denial-of-service protection.
 
 For local end-to-end testing, start the proxy separately:
 
@@ -64,7 +64,7 @@ Then open `http://localhost:8080/?weatherProxy=http://localhost:8787`. The query
 
 ## Metrics and score
 
-For total and low cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5°. At 10, 25 and 50 km it reports centre-ray mean plus wedge mean, 75th percentile and maximum. Spatial values use the nearest AEMET raster cell.
+For total and low cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5° through 60 km. The non-cumulative sightline strip therefore covers the full map arrow. At 10, 25 and 50 km it reports centre-ray mean plus wedge mean, 75th percentile and maximum. Spatial values use the nearest AEMET raster cell.
 
 Both UTC-hour fields surrounding eclipse maximum are retained. The target estimate is a point-by-point linear interpolation using the elapsed fraction of that hour; the UI and digest label it as an approximation, not an AEMET output time.
 

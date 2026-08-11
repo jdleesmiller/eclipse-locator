@@ -17,9 +17,63 @@ const FIELD_COVERAGES = {
 };
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || "https://jdlm.info,http://localhost:8080,http://127.0.0.1:8080").split(",").map((value) => value.trim()).filter(Boolean));
 const cache = new Map();
+const inFlight = new Map();
 const terrainTileCache = new Map();
-const CACHE_MS = 5 * 60 * 1000;
+const terrainTileInFlight = new Map();
+const CACHE_MS = 15 * 60 * 1000;
+const STALE_CACHE_MS = 2 * 60 * 60 * 1000;
+const FORECAST_PAST_MS = 8 * 60 * 60 * 1000;
+const FORECAST_FUTURE_MS = 78 * 60 * 60 * 1000;
+const MAX_TERRAIN_TILES_PER_REQUEST = 250;
 const AEMET_BOUNDS = { south: 33.5, north: 46.5, west: -14, east: 6 };
+
+function createLimiter(limit) {
+  let active = 0;
+  const waiting = [];
+  return async function run(callback) {
+    if (active >= limit) await new Promise((resolve) => waiting.push(resolve));
+    active += 1;
+    try { return await callback(); }
+    finally {
+      active -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+
+const withAemetSlot = createLimiter(4);
+const withTerrainSlot = createLimiter(6);
+
+function forecastTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("time must be an ISO-8601 forecast valid time");
+  if (date.getUTCMinutes() || date.getUTCSeconds() || date.getUTCMilliseconds()) throw new Error("forecast times must use whole UTC hours");
+  const delta = date.getTime() - Date.now();
+  if (delta < -FORECAST_PAST_MS || delta > FORECAST_FUTURE_MS) throw new Error("forecast times must be within the supported forecast window");
+  return date.toISOString();
+}
+
+async function cachedRequest(key, producer) {
+  const cached = cache.get(key);
+  const age = cached ? Date.now() - cached.createdAt : Infinity;
+  if (cached && age < CACHE_MS) return { ...cached.value, cached: true, stale: false };
+  if (inFlight.has(key)) return inFlight.get(key);
+  const pending = (async () => {
+    try {
+      const value = await producer();
+      cache.set(key, { createdAt: Date.now(), value });
+      if (cache.size > 300) cache.delete(cache.keys().next().value);
+      return value;
+    } catch (error) {
+      if (cached && age < STALE_CACHE_MS) {
+        return { ...cached.value, cached: true, stale: true, warning: `Upstream refresh failed; serving ${Math.round(age / 60000)}-minute-old cached data` };
+      }
+      throw error;
+    }
+  })().finally(() => inFlight.delete(key));
+  inFlight.set(key, pending);
+  return pending;
+}
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.has("*") ? "*" : ALLOWED_ORIGINS.has(origin) ? origin : "";
@@ -35,18 +89,18 @@ function parseRequest(url) {
   const fields = url.searchParams.get("fields")?.split(",").filter(Boolean) || [];
   if (!fields.length || fields.length > 4 || fields.some((field) => !FIELD_LAYERS[field])) throw new Error("fields must use total, low, high or base");
   const time = url.searchParams.get("time") || "";
-  const date = new Date(time);
-  if (Number.isNaN(date.getTime())) throw new Error("time must be an ISO-8601 forecast valid time");
+  const normalizedTime = forecastTime(time);
   const points = (url.searchParams.get("points") || "").split(";").filter(Boolean).map((pair) => {
     const [lat, lng] = pair.split(",").map(Number);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < AEMET_BOUNDS.south || lat > AEMET_BOUNDS.north || lng < AEMET_BOUNDS.west || lng > AEMET_BOUNDS.east) throw new Error("points must be inside the AEMET Iberian forecast region");
     return { lat, lng };
   });
   if (!points.length || points.length > 30) throw new Error("provide between 1 and 30 points");
-  return { fields, time: date.toISOString(), points };
+  return { fields, time: normalizedTime, points };
 }
 
 async function readBody(request, maxBytes = 160000) {
+  if (!(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) throw new Error("request Content-Type must be application/json");
   const chunks = [];
   let bytes = 0;
   for await (const chunk of request) {
@@ -61,15 +115,15 @@ async function readBody(request, maxBytes = 160000) {
 function parseRasterRequest(body) {
   const fields = Array.isArray(body?.fields) ? body.fields : [];
   if (!fields.length || fields.length > 2 || fields.some((field) => !FIELD_COVERAGES[field])) throw new Error("fields must use total or low");
-  const times = Array.isArray(body?.times) ? body.times.map((value) => new Date(value)) : [];
-  if (!times.length || times.length > 2 || times.some((date) => Number.isNaN(date.getTime()))) throw new Error("times must contain one or two ISO-8601 forecast valid times");
+  const times = Array.isArray(body?.times) ? body.times.map(forecastTime) : [];
+  if (!times.length || times.length > 2) throw new Error("times must contain one or two ISO-8601 forecast valid times");
   const points = Array.isArray(body?.points) ? body.points.map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) })) : [];
-  if (!points.length || points.length > 1200) throw new Error("provide between 1 and 1200 points");
+  if (!points.length || points.length > 1800) throw new Error("provide between 1 and 1800 points");
   if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < AEMET_BOUNDS.south || lat > AEMET_BOUNDS.north || lng < AEMET_BOUNDS.west || lng > AEMET_BOUNDS.east)) throw new Error("points must be inside the AEMET Iberian forecast region");
   const latitudes = points.map((point) => point.lat);
   const longitudes = points.map((point) => point.lng);
   if (Math.max(...latitudes) - Math.min(...latitudes) > 4 || Math.max(...longitudes) - Math.min(...longitudes) > 4) throw new Error("weather comparison locations must be within a four-degree region");
-  return { fields: [...new Set(fields)], times: [...new Set(times.map((date) => date.toISOString()))], points };
+  return { fields: [...new Set(fields)], times: [...new Set(times)], points };
 }
 
 function parseTerrainRequest(body) {
@@ -92,29 +146,38 @@ function tilePosition(point, zoom = 11) {
 async function terrainTile(tile) {
   const key = `${tile.zoom}/${tile.x}/${tile.y}`;
   if (terrainTileCache.has(key)) return terrainTileCache.get(key);
-  let lastError;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const response = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${key}.png`, { signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw new Error(`terrain tile source returned ${response.status}`);
-      const png = PNG.sync.read(Buffer.from(await response.arrayBuffer()));
-      terrainTileCache.set(key, png);
-      if (terrainTileCache.size > 200) terrainTileCache.delete(terrainTileCache.keys().next().value);
-      return png;
-    } catch (error) {
-      lastError = error;
-      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+  if (terrainTileInFlight.has(key)) return terrainTileInFlight.get(key);
+  const pending = (async () => {
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const png = await withTerrainSlot(async () => {
+          const response = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${key}.png`, { signal: AbortSignal.timeout(15000) });
+          if (!response.ok) throw new Error(`terrain tile source returned ${response.status}`);
+          return PNG.sync.read(Buffer.from(await response.arrayBuffer()));
+        });
+        terrainTileCache.set(key, png);
+        if (terrainTileCache.size > 300) terrainTileCache.delete(terrainTileCache.keys().next().value);
+        return png;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+      }
     }
-  }
-  throw lastError;
+    throw lastError;
+  })().finally(() => terrainTileInFlight.delete(key));
+  terrainTileInFlight.set(key, pending);
+  return pending;
 }
 
 async function terrainValues(request) {
   const positioned = request.points.map((point) => ({ point, tile: tilePosition(point) }));
   const tiles = [...new Map(positioned.map((item) => [`${item.tile.zoom}/${item.tile.x}/${item.tile.y}`, item.tile])).values()];
-  await mapLimit(tiles, 4, terrainTile);
+  if (tiles.length > MAX_TERRAIN_TILES_PER_REQUEST) throw new Error(`terrain request spans too many unique tiles (maximum ${MAX_TERRAIN_TILES_PER_REQUEST})`);
+  const pngs = await mapLimit(tiles, 4, terrainTile);
+  const requestTiles = new Map(tiles.map((tile, index) => [`${tile.zoom}/${tile.x}/${tile.y}`, pngs[index]]));
   const values = positioned.map(({ tile }) => {
-    const png = terrainTileCache.get(`${tile.zoom}/${tile.x}/${tile.y}`);
+    const png = requestTiles.get(`${tile.zoom}/${tile.x}/${tile.y}`);
     const offset = (tile.pixelY * png.width + tile.pixelX) * 4;
     return Number((png.data[offset] * 256 + png.data[offset + 1] + png.data[offset + 2] / 256 - 32768).toFixed(1));
   });
@@ -138,27 +201,29 @@ async function aemetRaster(field, time, points) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(`${AEMET_WCS_URL}?${params}`, { signal: AbortSignal.timeout(20000) });
-      if (!response.ok) throw new Error(`AEMET returned ${response.status}`);
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("tiff") && !contentType.includes("octet-stream")) {
-        const detail = (await response.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
-        throw new Error(`AEMET WCS did not return a raster${detail ? `: ${detail}` : ""}`);
-      }
-      const tiff = await fromArrayBuffer(await response.arrayBuffer());
-      const image = await tiff.getImage();
-      const [westEdge, southEdge, eastEdge, northEdge] = image.getBoundingBox();
-      const width = image.getWidth();
-      const height = image.getHeight();
-      const [raster] = await image.readRasters();
-      const values = points.map((point) => {
-        const x = Math.max(0, Math.min(width - 1, Math.floor((point.lng - westEdge) / (eastEdge - westEdge) * width)));
-        const y = Math.max(0, Math.min(height - 1, Math.floor((northEdge - point.lat) / (northEdge - southEdge) * height)));
-        const value = Number(raster[y * width + x]);
-        return value === -32768 || !Number.isFinite(value) ? null : value;
+      return await withAemetSlot(async () => {
+        const response = await fetch(`${AEMET_WCS_URL}?${params}`, { signal: AbortSignal.timeout(20000) });
+        if (!response.ok) throw new Error(`AEMET returned ${response.status}`);
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("tiff") && !contentType.includes("octet-stream")) {
+          const detail = (await response.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+          throw new Error(`AEMET WCS did not return a raster${detail ? `: ${detail}` : ""}`);
+        }
+        const tiff = await fromArrayBuffer(await response.arrayBuffer());
+        const image = await tiff.getImage();
+        const [westEdge, southEdge, eastEdge, northEdge] = image.getBoundingBox();
+        const width = image.getWidth();
+        const height = image.getHeight();
+        const [raster] = await image.readRasters();
+        const values = points.map((point) => {
+          const x = Math.max(0, Math.min(width - 1, Math.floor((point.lng - westEdge) / (eastEdge - westEdge) * width)));
+          const y = Math.max(0, Math.min(height - 1, Math.floor((northEdge - point.lat) / (northEdge - southEdge) * height)));
+          const value = Number(raster[y * width + x]);
+          return value === -32768 || !Number.isFinite(value) ? null : value;
+        });
+        if (values.some((value) => value === null)) throw new Error(`AEMET returned incomplete ${field} raster data`);
+        return { values, grid: { width, height, bbox: [westEdge, southEdge, eastEdge, northEdge] } };
       });
-      if (values.some((value) => value === null)) throw new Error(`AEMET returned incomplete ${field} raster data`);
-      return { values, grid: { width, height, bbox: [westEdge, southEdge, eastEdge, northEdge] } };
     } catch (error) {
       lastError = error;
       if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
@@ -169,21 +234,18 @@ async function aemetRaster(field, time, points) {
 
 async function weatherRasterValues(request) {
   const roundedPoints = request.points.map(({ lat, lng }) => ({ lat: Number(lat.toFixed(5)), lng: Number(lng.toFixed(5)) }));
-  const key = JSON.stringify({ ...request, points: roundedPoints });
-  const cached = cache.get(key);
-  if (cached && Date.now() - cached.createdAt < CACHE_MS) return { ...cached.value, cached: true };
-  const jobs = request.times.flatMap((time) => request.fields.map((field) => ({ field, time })));
-  const results = await mapLimit(jobs, 2, (job) => aemetRaster(job.field, job.time, roundedPoints));
-  const values = Object.fromEntries(request.times.map((time) => [time, {}]));
-  const grids = Object.fromEntries(request.times.map((time) => [time, {}]));
-  jobs.forEach((job, index) => {
-    values[job.time][job.field] = results[index].values;
-    grids[job.time][job.field] = results[index].grid;
+  const key = `raster:${JSON.stringify({ ...request, points: roundedPoints })}`;
+  return cachedRequest(key, async () => {
+    const jobs = request.times.flatMap((time) => request.fields.map((field) => ({ field, time })));
+    const results = await mapLimit(jobs, 2, (job) => aemetRaster(job.field, job.time, roundedPoints));
+    const values = Object.fromEntries(request.times.map((time) => [time, {}]));
+    const grids = Object.fromEntries(request.times.map((time) => [time, {}]));
+    jobs.forEach((job, index) => {
+      values[job.time][job.field] = results[index].values;
+      grids[job.time][job.field] = results[index].grid;
+    });
+    return { source: "AEMET AMA HARMONIE-AROME WCS", validTimes: request.times, retrievedAt: new Date().toISOString(), values, grids, cached: false, stale: false };
   });
-  const value = { source: "AEMET AMA HARMONIE-AROME WCS", validTimes: request.times, retrievedAt: new Date().toISOString(), values, grids, cached: false };
-  cache.set(key, { createdAt: Date.now(), value });
-  if (cache.size > 300) cache.delete(cache.keys().next().value);
-  return value;
 }
 
 async function aemetPoint(field, point, time) {
@@ -198,12 +260,14 @@ async function aemetPoint(field, point, time) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(`${AEMET_WMS_URL}?${params}`, { signal: AbortSignal.timeout(12000) });
-      if (!response.ok) throw new Error(`AEMET returned ${response.status}`);
-      const data = await response.json();
-      const value = Number(data?.features?.[0]?.properties?.GRAY_INDEX);
-      if (!Number.isFinite(value)) throw new Error(`AEMET returned no ${field} value`);
-      return value;
+      return await withAemetSlot(async () => {
+        const response = await fetch(`${AEMET_WMS_URL}?${params}`, { signal: AbortSignal.timeout(12000) });
+        if (!response.ok) throw new Error(`AEMET returned ${response.status}`);
+        const data = await response.json();
+        const value = Number(data?.features?.[0]?.properties?.GRAY_INDEX);
+        if (!Number.isFinite(value)) throw new Error(`AEMET returned no ${field} value`);
+        return value;
+      });
     } catch (error) {
       lastError = error;
       if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
@@ -226,17 +290,14 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function weatherPoints(request) {
-  const key = JSON.stringify(request);
-  const cached = cache.get(key);
-  if (cached && Date.now() - cached.createdAt < CACHE_MS) return { ...cached.value, cached: true };
-  const jobs = request.fields.flatMap((field) => request.points.map((point, index) => ({ field, point, index })));
-  const rawValues = await mapLimit(jobs, 10, (job) => aemetPoint(job.field, job.point, request.time));
-  const values = Object.fromEntries(request.fields.map((field) => [field, new Array(request.points.length)]));
-  jobs.forEach((job, index) => { values[job.field][job.index] = rawValues[index]; });
-  const value = { source: "AEMET AMA HARMONIE-AROME WMS", validTime: request.time, retrievedAt: new Date().toISOString(), values, cached: false };
-  cache.set(key, { createdAt: Date.now(), value });
-  if (cache.size > 300) cache.delete(cache.keys().next().value);
-  return value;
+  const key = `points:${JSON.stringify(request)}`;
+  return cachedRequest(key, async () => {
+    const jobs = request.fields.flatMap((field) => request.points.map((point, index) => ({ field, point, index })));
+    const rawValues = await mapLimit(jobs, 10, (job) => aemetPoint(job.field, job.point, request.time));
+    const values = Object.fromEntries(request.fields.map((field) => [field, new Array(request.points.length)]));
+    jobs.forEach((job, index) => { values[job.field][job.index] = rawValues[index]; });
+    return { source: "AEMET AMA HARMONIE-AROME WMS", validTime: request.time, retrievedAt: new Date().toISOString(), values, cached: false, stale: false };
+  });
 }
 
 const server = http.createServer(async (request, response) => {
@@ -248,12 +309,18 @@ const server = http.createServer(async (request, response) => {
     return response.end();
   }
   const url = new URL(request.url, `http://${request.headers.host}`);
-  if (url.pathname === "/health") return json(response, 200, { ok: true, cacheEntries: cache.size }, cors);
+  if (url.pathname === "/health") return json(response, 200, {
+    ok: true,
+    weatherCacheEntries: cache.size,
+    weatherRequestsInFlight: inFlight.size,
+    terrainTileCacheEntries: terrainTileCache.size,
+    terrainTilesInFlight: terrainTileInFlight.size,
+  }, { ...cors, "Cache-Control": "no-store" });
   if (origin && !Object.keys(cors).length) return json(response, 403, { error: "Origin not allowed" });
   try {
     if (request.method === "POST" && url.pathname === "/weather-raster-values") {
       const result = await weatherRasterValues(parseRasterRequest(await readBody(request)));
-      return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=300" });
+      return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=900, stale-if-error=7200" });
     }
     if (request.method === "POST" && url.pathname === "/terrain-values") {
       const result = await terrainValues(parseTerrainRequest(await readBody(request)));
@@ -262,9 +329,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method !== "GET" || url.pathname !== "/weather-points") return json(response, 404, { error: "Not found" }, cors);
     const parsed = parseRequest(url);
     const result = await weatherPoints(parsed);
-    return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=300" });
+    return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=900, stale-if-error=7200" });
   } catch (error) {
-    const clientError = /fields|times must|time must|points must|provide between|request body/.test(error.message);
+    const clientError = /fields|times must|time must|forecast times|forecast window|points must|provide between|request body|Content-Type|unique tiles/.test(error.message);
     return json(response, clientError ? 400 : 502, { error: error.message }, cors);
   }
 });

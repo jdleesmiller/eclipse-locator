@@ -122,6 +122,7 @@ try {
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
   if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
   if (!digest.candidates.every((candidate) => candidate.lowCloudDistanceProfile?.length >= 20)) throw new Error("Digest is missing the compact low-cloud distance profile");
+  if (!digest.candidates.every((candidate) => candidate.lowCloudDistanceProfile.at(-1)?.distanceKm === 60)) throw new Error("Cloud distance profiles should cover the full 60 km sightline");
   if (digest.candidates[0].notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
   if (digest.candidates[0].name !== "Edited smoke-test location") throw new Error("Digest is missing the edited saved location name");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");

@@ -1,6 +1,6 @@
 (function () {
   const SAMPLE_SPACING_KM = 2.5;
-  const MAX_DISTANCE_KM = 50;
+  const MAX_DISTANCE_KM = 60;
   const WEDGE_HALF_WIDTH_DEG = 5;
   const RAY_OFFSETS_DEG = [-5, -3, -1, 0, 1, 3, 5];
   const DISTANCE_BANDS_KM = [10, 25, 50];
