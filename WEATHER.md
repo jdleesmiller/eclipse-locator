@@ -31,6 +31,8 @@ The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript resp
 - `weather/digest.js` — JSON and Markdown digest generation.
 - `data/candidates.js` — editable Asturias candidate list.
 
+Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
+
 Numeric analysis is deliberately on demand. The browser makes six batched proxy requests. The proxy resolves six candidates × 21 points × two fields as 252 small AEMET `GetFeatureInfo` requests with a concurrency limit of ten and a five-minute in-memory cache. Moving the map does not trigger new weather requests.
 
 ## Deploy the Google Cloud Run proxy

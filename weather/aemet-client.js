@@ -9,6 +9,44 @@
     base: { label: "Cloud base", name: "ama_netcdf:ama_pen_base_nub", unit: "thousand ft" },
   };
   let requestNumber = 0;
+  const RETRY_DELAYS_MS = [1800, 6000];
+
+  const RetryingWmsLayer = L.TileLayer.WMS.extend({
+    createTile(coords, done) {
+      const tile = document.createElement("img");
+      let retries = 0;
+      let finished = false;
+      if (this.options.crossOrigin || this.options.crossOrigin === "") tile.crossOrigin = this.options.crossOrigin === true ? "" : this.options.crossOrigin;
+      if (typeof this.options.referrerPolicy === "string") tile.referrerPolicy = this.options.referrerPolicy;
+      tile.alt = "";
+      tile.setAttribute("role", "presentation");
+      const finish = (error) => {
+        if (finished) return;
+        finished = true;
+        done(error, tile);
+      };
+      tile.onload = () => {
+        if (retries) this.fire("weatherretryload", { tile, coords, retries });
+        finish(null);
+      };
+      tile.onerror = (error) => {
+        if (retries >= RETRY_DELAYS_MS.length) {
+          this.fire("weatherfinalerror", { tile, coords, retries });
+          finish(error);
+          return;
+        }
+        const delayMs = RETRY_DELAYS_MS[retries] + Math.round(Math.random() * 500);
+        retries += 1;
+        this.fire("weatherretry", { tile, coords, retries, delayMs });
+        window.setTimeout(() => {
+          if (!tile.isConnected) return finish(new Error("Weather tile left the map before retry"));
+          tile.src = this.getTileUrl(coords);
+        }, delayMs);
+      };
+      tile.src = this.getTileUrl(coords);
+      return tile;
+    },
+  });
 
   function wmsLayerOptions(kind, validTime) {
     return {
@@ -20,6 +58,10 @@
       opacity: 0.58,
       attribution: '<a href="https://ama.aemet.es/visor-de-variables" target="_blank" rel="noreferrer">AEMET HARMONIE-AROME</a>',
     };
+  }
+
+  function createWmsLayer(kind, validTime) {
+    return new RetryingWmsLayer(WMS_URL, wmsLayerOptions(kind, validTime));
   }
 
   function testValue(kind, lat, lng) {
@@ -85,5 +127,5 @@
   }
 
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, pointValue, pointValues });
+  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, createWmsLayer, pointValue, pointValues });
 }());

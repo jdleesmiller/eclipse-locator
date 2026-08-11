@@ -104,6 +104,7 @@ const weatherCard = document.querySelector("#weather-card");
 const weatherLayerSelect = document.querySelector("#weather-layer");
 const weatherTimeSelect = document.querySelector("#weather-time");
 const weatherLayerNote = document.querySelector("#weather-layer-note");
+const weatherMapStatus = document.querySelector("#weather-map-status");
 const weatherLegend = document.querySelector("#weather-legend");
 const weatherStatus = document.querySelector("#weather-status");
 const weatherResults = document.querySelector("#weather-results");
@@ -245,6 +246,7 @@ function updateWeatherOverlay() {
   if (!map) return;
   if (weatherLayer) map.removeLayer(weatherLayer);
   weatherLayer = null;
+  weatherMapStatus.textContent = "";
   const kind = weatherLayerSelect.value;
   const validTime = weatherTimeSelect.value;
   const labels = {
@@ -262,7 +264,25 @@ function updateWeatherOverlay() {
     weatherLegend.src = `${EclipseWeather.WMS_URL}?${legendParams}`;
   }
   if (kind !== "none") {
-    weatherLayer = L.tileLayer.wms(EclipseWeather.WMS_URL, EclipseWeather.wmsLayerOptions(kind, validTime)).addTo(map);
+    const retryingTiles = new Set();
+    let failedTiles = 0;
+    weatherLayer = EclipseWeather.createWmsLayer(kind, validTime);
+    weatherLayer.on("weatherretry", (event) => {
+      retryingTiles.add(event.tile);
+      weatherMapStatus.textContent = `AEMET tile unavailable; retrying ${retryingTiles.size} tile${retryingTiles.size === 1 ? "" : "s"} gently…`;
+    });
+    weatherLayer.on("weatherretryload", (event) => {
+      retryingTiles.delete(event.tile);
+      weatherMapStatus.textContent = failedTiles
+        ? `${failedTiles} forecast tile${failedTiles === 1 ? " is" : "s are"} still unavailable.`
+        : retryingTiles.size ? `Retrying ${retryingTiles.size} forecast tile${retryingTiles.size === 1 ? "" : "s"}…` : "Forecast tiles recovered.";
+    });
+    weatherLayer.on("weatherfinalerror", (event) => {
+      retryingTiles.delete(event.tile);
+      failedTiles += 1;
+      weatherMapStatus.textContent = `${failedTiles} forecast tile${failedTiles === 1 ? " is" : "s are"} unavailable after two retries. Pan or change time to try again.`;
+    });
+    weatherLayer.addTo(map);
   }
 }
 

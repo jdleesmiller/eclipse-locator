@@ -107,6 +107,7 @@ button.active { background: #f47d4b; }
 #analyze-weather { width: 100%; margin-top: 10px; }
 .weather-legend { display: block; max-height: 116px; max-width: 100%; margin: 8px auto 0; }
 .weather-legend[hidden] { display: none; }
+.weather-map-status { min-height: 13px; margin: 5px 0 0; color: #d7bc72; font-size: 9px; }
 .weather-results { display: grid; gap: 7px; margin-top: 9px; }
 .weather-result { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.04); }
 .weather-result strong { color: white; }
