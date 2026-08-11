@@ -100,6 +100,9 @@ const arCalibrationInstruction = document.querySelector("#ar-calibration-instruc
 const arFilterCheck = document.querySelector("#ar-filter-check");
 const arCalibrationUnavailable = document.querySelector("#ar-calibration-unavailable");
 const arCalibrationUnavailableReason = document.querySelector("#ar-calibration-unavailable-reason");
+const arLocationNote = document.querySelector("#ar-location-note");
+const arUseCurrentLocation = document.querySelector("#ar-use-current-location");
+const arLocationMessage = document.querySelector("#ar-location-message");
 const eclipseExplorer = document.querySelector("#eclipse-explorer");
 const locationGate = document.querySelector("#location-gate");
 const panel = document.querySelector(".panel");
@@ -132,7 +135,6 @@ const savedComparison = document.querySelector("#saved-comparison");
 const shareStatus = document.querySelector("#share-status");
 const arButton = document.querySelector("#ar-button");
 const arEntrySafety = document.querySelector("#ar-entry-safety");
-const arLocationNote = document.querySelector("#ar-location-note");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -265,11 +267,13 @@ function refreshObserverContext() {
   arEntrySafety.hidden = !matches;
   arLocationNote.hidden = matches;
   if (!matches) {
-    arLocationNote.textContent = state.deviceLocation && state.deviceLocationAccuracyM > 2000
+    const canUseCurrentLocation = !state.deviceLocation;
+    arUseCurrentLocation.hidden = !canUseCurrentLocation;
+    arLocationMessage.textContent = state.deviceLocation && state.deviceLocationAccuracyM > 2000
       ? "Camera view is hidden because your current-location fix is not accurate enough."
       : state.deviceLocation
         ? "Camera view is hidden because this viewing point differs from your current location."
-        : "Use your current location to enable the camera view for this viewing point.";
+        : " to enable the camera view for this viewing point.";
   }
 }
 
@@ -1583,7 +1587,14 @@ function updateCalculations({ fit = false } = {}) {
   }
   if (fit) {
     const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
-    map.fitBounds(L.latLngBounds([[state.observer.lat, state.observer.lng], end]), { padding: [45, 45], maxZoom: 10 });
+    const sidePanelPadding = window.matchMedia("(min-width: 760px)").matches
+      ? Math.ceil(panel.getBoundingClientRect().width) + 45
+      : 45;
+    map.fitBounds(L.latLngBounds([[state.observer.lat, state.observer.lng], end]), {
+      paddingTopLeft: [45, 45],
+      paddingBottomRight: [sidePanelPadding, 45],
+      maxZoom: 10,
+    });
   }
 }
 
@@ -1729,6 +1740,7 @@ async function shareCurrentView() {
 }
 
 document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
+arUseCurrentLocation.addEventListener("click", () => locateUser(false));
 document.querySelector("#gate-locate").addEventListener("click", () => locateUser(true));
 document.querySelector("#place-search-form").addEventListener("submit", async (event) => {
   event.preventDefault();

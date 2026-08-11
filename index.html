@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-cloudautoload6" />
+    <link rel="stylesheet" href="styles.css?v=20260812-locationlink1" />
   </head>
   <body>
     <main>
@@ -74,7 +74,7 @@
 
         <button id="ar-button" class="ar-primary" type="button" hidden><span aria-hidden="true">◉</span> Show eclipse position on my camera</button>
         <p id="ar-entry-safety" class="safety-note" hidden><strong>Solar safety:</strong> never look directly at the Sun without certified eclipse glasses. Cover the camera lenses with a suitable solar filter before pointing them at the Sun.</p>
-        <p id="ar-location-note" class="ar-location-note note">Use your current location to enable the camera view for this viewing point.</p>
+        <p id="ar-location-note" class="ar-location-note note"><button id="ar-use-current-location" class="inline-link" type="button">Use current location</button><span id="ar-location-message"> to enable the camera view for this viewing point.</span></p>
 
         <section id="weather-card" class="weather-card" hidden>
           <div class="section-heading"><h2>Cloud forecast</h2><span id="cloud-result" class="result-badge">Checking…</span></div>
@@ -195,6 +195,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260812-cloudprofile1"></script>
-    <script src="app.js?v=20260812-cloudautoload6"></script>
+    <script src="app.js?v=20260812-locationlink1"></script>
   </body>
 </html>

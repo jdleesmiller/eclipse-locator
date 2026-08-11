@@ -57,6 +57,17 @@ try {
   if (await page.locator("#map-close-button svg").count() !== 1) throw new Error("Expected an SVG close control on the map");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
   if ((await page.locator(".technical-details > summary").textContent()).trim() !== "Details") throw new Error("Expected the simplified Details heading");
+  await page.setViewportSize({ width: 820, height: 1100 });
+  await page.evaluate(() => updateCalculations({ fit: true }));
+  await page.waitForTimeout(350);
+  const tabletLayout = await page.evaluate(() => {
+    const marker = document.querySelector(".observer-pin").getBoundingClientRect();
+    const controls = document.querySelector(".panel").getBoundingClientRect();
+    return { markerRight: marker.right, panelLeft: controls.left };
+  });
+  if (tabletLayout.markerRight >= tabletLayout.panelLeft) throw new Error(`Observer marker is covered by the portrait-tablet panel: ${JSON.stringify(tabletLayout)}`);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.evaluate(() => updateCalculations({ fit: true }));
   await page.evaluate(() => history.back());
   await page.locator("#location-gate").waitFor({ state: "visible" });
   await page.evaluate(() => history.forward());
@@ -189,6 +200,9 @@ try {
   await page.locator("#ar-button").waitFor({ state: "hidden" });
   if (await page.locator(".place-pin").count() !== 1) throw new Error("A selected place away from the device should use a map pin");
   if (!await page.locator("#ar-location-note").isVisible()) throw new Error("Expected an explanation when camera view is unavailable away from the device");
+  await page.evaluate(() => { state.deviceLocation = null; state.deviceLocationAccuracyM = null; refreshObserverContext(); });
+  if (!await page.locator("#ar-use-current-location").isVisible()) throw new Error("Expected an inline current-location action when camera view is unavailable");
+  await page.evaluate(() => { state.deviceLocation = { lat: 43.5322, lng: -5.6611 }; state.deviceLocationAccuracyM = 10; });
   await page.evaluate(() => history.back());
   await page.locator("#ar-button").waitFor({ state: "visible" });
   if (await page.locator(".observer-pin").count() !== 1) throw new Error("The device-matched observer should use the current-location dot");

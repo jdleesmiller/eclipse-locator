@@ -106,6 +106,7 @@ input { min-width: 190px; padding: 9px; border: 1px solid var(--line); border-ra
 button { min-height: 43px; border: 0; border-radius: 10px; background: var(--accent); color: #17202a; font-weight: 750; cursor: pointer; }
 button.secondary { border: 1px solid var(--line); background: #162b3e; color: var(--ink); }
 button.active { background: #f47d4b; }
+button.inline-link { display: inline; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #b9d8ef; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
 
 .terrain-card, .sightline-card, .technical-details { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
 .weather-card { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
