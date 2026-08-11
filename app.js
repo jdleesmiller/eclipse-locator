@@ -8,6 +8,7 @@ const EARTH_RADIUS_M = 6371008.8;
 const EYE_HEIGHT_M = 1.7;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
 const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
+const TEST_MODE = new URLSearchParams(window.location.search).get("test") === "1";
 const CALIBRATION_POINTS = [
   { name: "centre", x: 0.5, y: 0.5 },
   { name: "left target", x: 0.2, y: 0.5 },
@@ -24,10 +25,10 @@ const state = {
   viewingDate: null,
   azimuth: 0,
   elevation: 0,
-  settingLocation: false,
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
+  weather: { layer: null, results: null, digest: null, digestFormat: "markdown" },
   ar: {
     active: false,
     stream: null,
@@ -61,6 +62,7 @@ let observerMarker = null;
 let sightlineLayer = null;
 let distanceLayer = null;
 let terrainLayer = null;
+let weatherLayer = null;
 let lastLocationChoice = null;
 
 const azimuthOutput = document.querySelector("#azimuth");
@@ -69,7 +71,6 @@ const directionOutput = document.querySelector("#direction");
 const heightTable = document.querySelector("#height-table");
 const heightNote = document.querySelector("#height-note");
 const statusOutput = document.querySelector("#status");
-const setLocationButton = document.querySelector("#set-location-button");
 const terrainProfile = document.querySelector("#terrain-profile");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
@@ -94,9 +95,20 @@ const placeResults = document.querySelector("#place-results");
 const lastLocationButton = document.querySelector("#last-location");
 const eventKindOutput = document.querySelector("#event-kind");
 const eventSummaryOutput = document.querySelector("#event-summary");
+const eventDateOutput = document.querySelector("#event-date");
+const eventObscurationOutput = document.querySelector("#event-obscuration");
 const eventEyebrow = document.querySelector("#event-eyebrow");
 const eventTitle = document.querySelector("#event-title");
 const arOffscreenLabel = arOffscreenArrow.querySelector("b");
+const weatherCard = document.querySelector("#weather-card");
+const weatherLayerSelect = document.querySelector("#weather-layer");
+const weatherTimeSelect = document.querySelector("#weather-time");
+const weatherLayerNote = document.querySelector("#weather-layer-note");
+const weatherLegend = document.querySelector("#weather-legend");
+const weatherStatus = document.querySelector("#weather-status");
+const weatherResults = document.querySelector("#weather-results");
+const weatherDigest = document.querySelector("#weather-digest");
+const weatherDigestText = document.querySelector("#weather-digest-text");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -154,16 +166,7 @@ function initializeMap() {
   distanceLayer = L.layerGroup().addTo(map);
   terrainLayer = L.layerGroup().addTo(map);
   observerMarker.on("dragend", (event) => setObserver(event.target.getLatLng(), "Observer moved to"));
-  map.on("click", (event) => {
-    if (state.settingLocation) {
-      state.settingLocation = false;
-      setLocationButton.classList.remove("active");
-      setLocationButton.textContent = "Set observer on map";
-      setObserver(event.latlng, "Observer set to");
-    } else {
-      inspectPoint(event.latlng);
-    }
-  });
+  map.on("click", (event) => setObserver(event.latlng, "Viewing point set to"));
 }
 
 function eclipseKindName(kind) {
@@ -224,11 +227,102 @@ function selectEclipse(eclipse, fit = true) {
   state.viewingDate = peakDate;
   const kindLabel = kind === "total" ? "Total solar eclipse" : kind === "annular" ? "Annular solar eclipse" : "Partial solar eclipse";
   eventKindOutput.textContent = kindLabel;
-  eventSummaryOutput.textContent = `${state.locationName} · ${formatLocationTime(peakDate, true)} · ${Math.round(eclipse.obscuration * 100)}% obscuration`;
+  eventDateOutput.textContent = formatLocationTime(peakDate, true);
+  eventObscurationOutput.textContent = `${Math.round(eclipse.obscuration * 100)}%`;
+  eventSummaryOutput.textContent = state.locationName;
   eventEyebrow.textContent = "ECLIPSE LOCATOR";
   eventTitle.textContent = state.locationName;
   arOffscreenLabel.textContent = kind === "partial" ? "Maximum eclipse" : kind === "total" ? "Totality" : "Annularity";
   updateCalculations({ fit });
+  refreshWeatherAvailability();
+}
+
+function weatherApplies() {
+  return state.viewingDate instanceof Date && state.viewingDate.toISOString().slice(0, 10) === "2026-08-12";
+}
+
+function updateWeatherOverlay() {
+  if (!map) return;
+  if (weatherLayer) map.removeLayer(weatherLayer);
+  weatherLayer = null;
+  const kind = weatherLayerSelect.value;
+  const validTime = weatherTimeSelect.value;
+  const labels = {
+    low: "Low-cloud percentage; cloud bases below approximately 8,200 ft.",
+    total: "Total percentage of sky covered as seen from the surface.",
+    high: "High-cloud percentage; cloud bases above approximately 16,400 ft.",
+    base: "Forecast cloud-base height in thousands of feet.",
+    none: "Cloud overlay hidden.",
+  };
+  const minutesFromEclipse = Math.round((state.viewingDate - new Date(validTime)) / 60000);
+  weatherLayerNote.textContent = `${labels[kind]} Valid ${validTime.slice(11, 16)} UTC (${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" }).format(new Date(validTime))} CEST), ${Math.abs(minutesFromEclipse)} minutes ${minutesFromEclipse >= 0 ? "before" : "after"} maximum.`;
+  weatherLegend.hidden = kind === "none";
+  if (kind !== "none") {
+    const legendParams = new URLSearchParams({ REQUEST: "GetLegendGraphic", VERSION: "1.0.0", FORMAT: "image/png", WIDTH: "20", HEIGHT: "20", LAYER: EclipseWeather.LAYERS[kind].name });
+    weatherLegend.src = `${EclipseWeather.WMS_URL}?${legendParams}`;
+  }
+  if (kind !== "none") {
+    weatherLayer = L.tileLayer.wms(EclipseWeather.WMS_URL, EclipseWeather.wmsLayerOptions(kind, validTime)).addTo(map);
+  }
+}
+
+function refreshWeatherAvailability() {
+  weatherCard.hidden = !weatherApplies();
+  if (weatherApplies()) updateWeatherOverlay();
+  else if (weatherLayer && map) {
+    map.removeLayer(weatherLayer);
+    weatherLayer = null;
+  }
+}
+
+function renderWeatherResults(results) {
+  weatherResults.replaceChildren();
+  for (const result of results) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "weather-result";
+    item.innerHTML = `<strong>${result.name}</strong><b class="weather-score">${result.score}/100</b><small>Low cloud: here ${result.metrics.lowCloudAtObserverPct}% · mean 10/25/50 km ${result.metrics.low.km10.mean}/${result.metrics.low.km25.mean}/${result.metrics.low.km50.mean}% · max 25 km ${result.metrics.low.km25.max}%<br>Total cloud: mean 10/25/50 km ${result.metrics.total.km10.mean}/${result.metrics.total.km25.mean}/${result.metrics.total.km50.mean}%</small>`;
+    item.addEventListener("click", () => activateLocation({ lat: result.lat, lng: result.lng, name: result.name, timezone: "Europe/Madrid" }));
+    weatherResults.append(item);
+  }
+}
+
+function showDigest(format = state.weather.digestFormat) {
+  if (!state.weather.digest) return;
+  state.weather.digestFormat = format;
+  weatherDigestText.value = format === "json" ? JSON.stringify(state.weather.digest, null, 2) : EclipseWeather.digestMarkdown(state.weather.digest);
+  document.querySelector("#show-json-digest").textContent = format === "json" ? "Show Markdown" : "Show JSON";
+}
+
+async function analyzeWeather() {
+  const validTime = weatherTimeSelect.value;
+  const button = document.querySelector("#analyze-weather");
+  button.disabled = true;
+  weatherResults.replaceChildren();
+  weatherDigest.hidden = true;
+  weatherStatus.textContent = "Sampling total and low cloud along six Sun-facing corridors…";
+  try {
+    const candidates = window.ECLIPSE_CANDIDATES.map((candidate) => {
+      const sun = SunCalc.getPosition(new Date(validTime), candidate.lat, candidate.lng);
+      return { ...candidate, azimuthDeg: normalizeAngle(toDegrees(sun.azimuth) + 180) };
+    });
+    const results = await EclipseWeather.analyzeCandidates(candidates, state.azimuth, validTime, (complete, total, name) => {
+      weatherStatus.textContent = `Sampled ${name} (${complete} of ${total})…`;
+    });
+    state.weather.results = results;
+    renderWeatherResults(results);
+    state.weather.digest = EclipseWeather.createDigest({
+      validTime, azimuthDeg: state.azimuth, elevationDeg: state.elevation, candidates: results,
+      warnings: ["Model initialization time is not exposed by AEMET's public WMS.", "Cloud values are nearest model grid cells; the experimental score is not a visibility guarantee."],
+    });
+    showDigest("markdown");
+    weatherDigest.hidden = false;
+    weatherStatus.textContent = `Comparison complete. Best provisional score: ${results[0].name} (${results[0].score}/100). Tap a site to move the map.`;
+  } catch (error) {
+    weatherStatus.textContent = `Cloud analysis unavailable: ${error.message}. The map overlay may still work.`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function upcomingEclipses(count, centralOnly = false) {
@@ -654,6 +748,21 @@ async function openArView() {
   refreshCalibrationSelect();
   arStatus.textContent = "Requesting orientation and camera access…";
 
+  if (TEST_MODE) {
+    state.ar.cameraReady = true;
+    state.ar.orientationPermissionGranted = true;
+    state.ar.orientationReady = true;
+    state.ar.rawHeading = 200;
+    state.ar.rawPitch = 25;
+    state.ar.validOrientationCount = 10;
+    state.ar.orientationMotionDegrees = 5;
+    state.ar.orientationHistory = Array.from({ length: 8 }, () => ({ heading: 200, pitch: 25 }));
+    arStatus.textContent = "Test mode: simulated camera and orientation are active.";
+    arMarkers.hidden = false;
+    renderArOverlay();
+    return;
+  }
+
   // Start both permission-sensitive operations before awaiting either one so
   // both remain associated with the AR button's user gesture on iOS.
   let orientationMessage = "";
@@ -699,13 +808,13 @@ function showCalibrationStep() {
 }
 
 function startSunCalibration() {
-  const currentSun = sunPositionAt(new Date());
+  const currentSun = TEST_MODE ? { azimuth: 205, elevation: 30 } : sunPositionAt(new Date());
   if (currentSun.elevation <= 1) {
     arStatus.textContent = "The current Sun is too close to or below the horizon for calibration.";
     return;
   }
-  if (!state.ar.cameraReady || !state.ar.orientationReady || state.ar.rawHeading === null || state.ar.rawPitch === null) {
-    arStatus.textContent = "Camera and orientation must finish initializing before calibration. Move the phone gently and try again.";
+  if (!state.ar.cameraReady || !state.ar.orientationPermissionGranted || state.ar.rawHeading === null || state.ar.rawPitch === null) {
+    arStatus.textContent = "Camera and orientation readings are not available yet. Move the phone gently and try again.";
     return;
   }
   state.ar.calibrationStep = 0;
@@ -802,13 +911,18 @@ function finishSunCalibration() {
 }
 
 function captureSunCalibration() {
-  const orientation = averagedRecentOrientation();
+  const point = CALIBRATION_POINTS[state.ar.calibrationStep];
+  const testHorizontalAngle = toDegrees(Math.atan(2 * (point.x - 0.5) * Math.tan(toRadians(52 / 2))));
+  const testVerticalAngle = toDegrees(Math.atan(2 * (0.5 - point.y) * Math.tan(toRadians(64 / 2))));
+  const orientation = TEST_MODE
+    ? { heading: normalizeAngle(205 - testHorizontalAngle - 5), pitch: 30 - testVerticalAngle + 2, readingCount: 8 }
+    : averagedRecentOrientation();
   if (!orientation) {
     arStatus.textContent = "Not enough stable sensor readings. Hold still briefly and try again.";
     return;
   }
-  const point = CALIBRATION_POINTS[state.ar.calibrationStep];
-  state.ar.calibrationSamples.push({ point, sun: sunPositionAt(new Date()), ...orientation });
+  const calibrationSun = TEST_MODE ? { azimuth: 205, elevation: 30 } : sunPositionAt(new Date());
+  state.ar.calibrationSamples.push({ point, sun: calibrationSun, ...orientation });
   state.ar.calibrationStep += 1;
   if (state.ar.calibrationStep >= CALIBRATION_POINTS.length) finishSunCalibration();
   else showCalibrationStep();
@@ -888,12 +1002,15 @@ function locateUser(fromGate = false) {
   if (fromGate) gateStatus.textContent = "Requesting your location…";
   else statusOutput.textContent = "Finding your location…";
   navigator.geolocation.getCurrentPosition(
-    (position) => activateLocation({
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-      name: `Current location (±${Math.round(position.coords.accuracy)} m)`,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }),
+    (position) => {
+      activateLocation({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        name: "Current location",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      if (position.coords.accuracy > 1000) statusOutput.textContent = `Location accuracy is poor (approximately ±${Math.round(position.coords.accuracy / 100) / 10} km). Choose or move the viewing point before relying on the sightline.`;
+    },
     () => {
       locationGate.hidden = false;
       gateStatus.textContent = "Location permission was unavailable. Search for a city or place instead.";
@@ -1029,6 +1146,28 @@ arFov.addEventListener("input", () => {
 document.querySelector("#choose-location-button").addEventListener("click", () => { locationGate.hidden = false; });
 document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
+weatherLayerSelect.addEventListener("change", updateWeatherOverlay);
+weatherTimeSelect.addEventListener("change", () => {
+  updateWeatherOverlay();
+  state.weather.results = null;
+  state.weather.digest = null;
+  weatherResults.replaceChildren();
+  weatherDigest.hidden = true;
+  weatherStatus.textContent = "Forecast time changed. Run the site comparison for fresh corridor values.";
+});
+document.querySelector("#analyze-weather").addEventListener("click", analyzeWeather);
+document.querySelector("#show-json-digest").addEventListener("click", () => showDigest(state.weather.digestFormat === "json" ? "markdown" : "json"));
+document.querySelector("#copy-weather-digest").addEventListener("click", async () => {
+  const text = weatherDigestText.value;
+  try {
+    await navigator.clipboard.writeText(text);
+    weatherStatus.textContent = `${state.weather.digestFormat === "json" ? "JSON" : "Markdown"} digest copied.`;
+  } catch {
+    weatherDigestText.focus();
+    weatherDigestText.select();
+    weatherStatus.textContent = "Clipboard access was unavailable; the digest text is selected for copying.";
+  }
+});
 document.querySelectorAll(".profile-ranges button").forEach((button) => {
   button.addEventListener("click", () => {
     state.profileRangeKm = Number(button.dataset.range);
@@ -1036,11 +1175,6 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
     if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
   });
 });
-setLocationButton.addEventListener("click", () => {
-  state.settingLocation = !state.settingLocation;
-  setLocationButton.classList.toggle("active", state.settingLocation);
-  setLocationButton.textContent = state.settingLocation ? "Tap a map location…" : "Set observer on map";
-  statusOutput.textContent = state.settingLocation ? "Tap the map to place the observer." : "Observer placement cancelled.";
-});
 refreshCalibrationSelect();
 prepareLocationGate();
+if (TEST_MODE) activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });

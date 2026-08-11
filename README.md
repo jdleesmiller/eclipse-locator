@@ -2,6 +2,8 @@
 
 A small, mobile-first map for finding the next solar eclipse visible from a chosen location and exploring the Sun's sightline. It uses Leaflet, OpenStreetMap, SunCalc, Astronomy Engine and Open-Meteo services, with no API keys or build step.
 
+For the 12 August 2026 eclipse it also provides live AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays, plus on-demand Sun-corridor comparisons for six Asturias viewing sites. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
+
 ## Run locally
 
 From this directory, start any static file server:
@@ -12,14 +14,20 @@ python3 -m http.server 8080
 
 Then open <http://localhost:8080>. An internet connection is still needed for the Leaflet, SunCalc and Astronomy Engine CDN files, OpenStreetMap tiles, place search and terrain elevation samples.
 
+Cloud overlays and live site comparison also require access to `https://ama.aemet.es`. No AEMET API key is required for the current public WMS integration.
+
+For a desktop interaction harness, open <http://localhost:8080/?test=1>. Test mode selects a fixed Gijón location and simulates camera/orientation readiness plus consistent calibration readings. It is useful for checking the AR panels and five-step calibration wizard, but does not test real camera, compass or iOS permission behaviour.
+
+With the local server running, the automated mobile-sized smoke test can be run with `npm run test:ui`. It uses the installed Google Chrome, reports browser console errors, exercises the filtered-Sun calibration flow and writes screenshots to `test-artifacts/`.
+
 To view it on an iPhone on the same Wi-Fi network, find the computer's local IP address and open `http://COMPUTER-IP:8080` on the phone. The map and manual observer placement work this way, but browser geolocation generally requires HTTPS (except on `localhost`). For reliable phone geolocation, deploy to an HTTPS host such as GitHub Pages or serve locally with a trusted HTTPS certificate.
 
 ## Browser permissions and limitations
 
 - Geolocation requires user permission and, on normal hostnames/IP addresses, a secure HTTPS context. If it fails, search for a place using the key-free Open-Meteo geocoding service. The map does not load until a location is chosen.
-- The next eclipse whose maximum occurs above the local horizon is calculated in the browser. Use **Next eclipse** to advance to another event or **Next total/annular** to skip partial eclipses.
-- Calculated event summaries use the chosen location's time zone when it is available from place search. The editable date/time input is interpreted in the browser/device's current time zone, which matters when exploring a remote location.
-- The optional AR camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping the **AR** button. Compass readings can drift and the browser does not report the camera's exact field of view, so use the calibration and camera-width controls rather than treating marker placement as survey-grade.
+- The next eclipse whose maximum occurs above the local horizon is calculated in the browser. **Explore other eclipses** lists upcoming local events and future total or annular events visible from the selected point.
+- Calculated event summaries use the chosen location's time zone when it is available from place search. The sightline time is fixed at the selected eclipse's maximum.
+- The optional AR camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping **Preview direction in AR**. Compass readings can drift and the browser does not report the camera's exact field of view, so use the optional filtered-Sun calibration rather than treating marker placement as survey-grade.
 - Never look directly at the uneclipsed or partially eclipsed Sun without suitable solar viewing protection. Use an appropriate solar filter over the camera lens during partial phases; the phone screen is not eye protection.
 
 ## Hosting

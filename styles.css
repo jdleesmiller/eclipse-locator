@@ -73,14 +73,19 @@ button, input { font: inherit; }
 }
 
 .drag-handle { width: 38px; height: 4px; margin: 0 auto 11px; border-radius: 10px; background: #536271; }
-.event-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 0 11px; border-bottom: 1px solid var(--line); }
+.event-card { padding: 0 0 11px; border-bottom: 1px solid var(--line); }
 .event-card strong, .event-card span { display: block; }
-.event-card strong { color: var(--accent); font-size: 13px; }
+.event-card > strong { color: var(--accent); font-size: 19px; letter-spacing: -.02em; }
 .event-card span { margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.3; }
-.text-button { min-height: 34px; padding: 5px 8px; border: 0; background: transparent; color: #b9d8ef; font-size: 10px; text-decoration: underline; text-underline-offset: 3px; }
+.event-facts { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 9px; }
+.event-facts > div { padding: 8px 10px; border-radius: 9px; background: rgba(255,255,255,.05); }
+.event-facts span { margin: 0; }
+.event-facts b { display: block; margin-top: 2px; color: white; font-size: 14px; }
+.event-facts > div:last-child b { color: var(--accent); font-size: 20px; }
+.text-button { width: 100%; min-height: 34px; margin-top: 5px; padding: 5px 8px; border: 0; background: transparent; color: #b9d8ef; font-size: 11px; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 .ar-primary { width: 100%; margin-top: 11px; font-size: 14px; }
 .ar-primary span { margin-right: 5px; }
-.ar-primary + .actions { margin-top: 9px; }
+.location-button { width: 100%; margin-top: 9px; }
 label { font-size: 13px; font-weight: 700; }
 label span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 500; }
 input { min-width: 190px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #10253a; color: var(--ink); }
@@ -95,6 +100,24 @@ button.secondary { border: 1px solid var(--line); background: #162b3e; color: va
 button.active { background: #f47d4b; }
 
 .terrain-card, .technical-details { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+.weather-card { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+.weather-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+.weather-controls label { color: var(--muted); font-size: 10px; }
+.weather-controls select { display: block; width: 100%; min-width: 0; margin-top: 4px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: #10253a; color: white; font-size: 11px; }
+#analyze-weather { width: 100%; margin-top: 10px; }
+.weather-legend { display: block; max-height: 116px; max-width: 100%; margin: 8px auto 0; }
+.weather-legend[hidden] { display: none; }
+.weather-results { display: grid; gap: 7px; margin-top: 9px; }
+.weather-result { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.04); }
+.weather-result strong { color: white; }
+.weather-result .weather-score { color: var(--accent); font-size: 16px; }
+.weather-result small { grid-column: 1 / -1; color: var(--muted); line-height: 1.35; }
+.weather-digest { margin-top: 10px; color: #b9d8ef; font-size: 11px; }
+.digest-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+.digest-actions button { min-height: 36px; padding: 5px; font-size: 10px; }
+#weather-digest-text { width: 100%; height: 180px; margin-top: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #06111e; color: #d9e4ec; font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.weather-source { margin: 8px 0 0; color: var(--muted); font-size: 9px; }
+.weather-source a { color: #a9cce6; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; }
 .section-heading h2 { margin: 0; font-size: 14px; }
 .section-heading span { color: var(--muted); font-size: 10px; }
@@ -143,10 +166,6 @@ button.active { background: #f47d4b; }
 .eclipse-choice b { align-self: center; color: white; font-size: 12px; white-space: nowrap; }
 .sheet-note { margin-top: 26px; }
 
-@media (max-width: 390px) {
-  .event-card { align-items: flex-start; }
-  .text-button { max-width: 105px; }
-}
 
 .observer-pin { width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #087dce; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
 .distance-label { color: #563e00; font-size: 10px; font-weight: 800; text-shadow: 0 1px white, 1px 0 white, 0 -1px white, -1px 0 white; }

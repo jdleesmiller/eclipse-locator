@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "test:ui": "node tests/ui-smoke.mjs",
+    "test:weather-live": "node tests/weather-live.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
+}
