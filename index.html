@@ -114,6 +114,7 @@
             <div><span class="reading-label">Sun bearing</span><strong id="azimuth">—</strong><small id="direction">—</small></div>
             <div><span class="reading-label">Elevation</span><strong id="elevation">—</strong><small>above horizon</small></div>
           </div>
+          <div id="phase-technical" class="phase-technical"></div>
         </details>
 
         <p id="status" class="status" aria-live="polite"></p>
@@ -148,25 +149,20 @@
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
           <p id="ar-status">Requesting camera and orientation access…</p>
           <div id="ar-main-controls">
-            <button id="ar-open-calibration" class="ar-settings-button" type="button">Refine alignment <span>requires a proper solar filter</span></button>
+            <button id="ar-open-calibration" class="ar-settings-button" type="button">Refine alignment with the Sun <span>requires a visible Sun and a proper solar filter</span></button>
           </div>
           <div id="ar-calibration-settings" hidden>
             <div class="ar-control-row">
-              <button id="ar-calibrate" type="button">Calibrate with current Sun</button>
+              <button id="ar-calibrate" type="button">Calibrate with the visible Sun</button>
               <label for="ar-fov">Camera width <span id="ar-fov-value">60°</span></label>
               <input id="ar-fov" type="range" min="25" max="100" value="60" step="1" />
             </div>
-            <div class="saved-calibrations">
-              <select id="ar-calibration-select" aria-label="Saved calibrations"><option value="">Saved calibrations…</option></select>
-              <button id="ar-apply-calibration" type="button">Apply</button>
-              <button id="ar-delete-calibration" class="secondary" type="button">Delete</button>
-            </div>
-            <p class="ar-help">Hold the phone upright in portrait. Saved FOV remains useful, but compass alignment can change near metal or magnets.</p>
+            <p class="ar-help">If the Sun is not visible, camera width can be adjusted manually, but there is no reliable visual reference. The last calibrated camera width is remembered; compass correction is not reused because it changes with the magnetic environment.</p>
             <button id="ar-close-calibration" class="secondary ar-settings-done" type="button">Done</button>
           </div>
           <div id="ar-filter-check" class="ar-filter-check" hidden>
-            <strong>Fit the solar filter before continuing</strong>
-            <p>Securely cover the phone’s active camera lenses with a suitable solar filter. Never look directly at the Sun without certified solar viewing protection. Pointing an unfiltered camera at the Sun may damage its sensor. The phone screen does not protect your eyes.</p>
+            <strong>Only continue with a visible Sun and a fitted solar filter</strong>
+            <p>Securely cover the phone’s active camera lenses with a suitable solar filter. Never look directly at the Sun without certified solar viewing protection. Doing this without a filter may permanently damage your phone and/or eyes. The phone screen does not protect your eyes.</p>
             <button id="ar-filter-confirm" type="button">My camera lenses are securely filtered</button>
             <button id="ar-filter-cancel" class="secondary" type="button">Not now</button>
           </div>
@@ -187,6 +183,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260811-general2"></script>
-    <script src="app.js?v=20260811-design3"></script>
+    <script src="app.js?v=20260811-ar1"></script>
   </body>
 </html>

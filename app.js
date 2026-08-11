@@ -50,6 +50,8 @@ const state = {
     orientationPermissionGranted: false,
     orientationError: null,
     orientationReady: false,
+    orientationAbsolute: false,
+    orientationEventNames: [],
     validOrientationCount: 0,
     initialOrientation: null,
     orientationMotionDegrees: 0,
@@ -87,7 +89,6 @@ const arCalibrationSettings = document.querySelector("#ar-calibration-settings")
 const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
 const arCalibrationTarget = document.querySelector("#ar-calibration-target");
 const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
-const arCalibrationSelect = document.querySelector("#ar-calibration-select");
 const arFilterCheck = document.querySelector("#ar-filter-check");
 const eclipseExplorer = document.querySelector("#eclipse-explorer");
 const locationGate = document.querySelector("#location-gate");
@@ -154,6 +155,28 @@ function normalizeAngle(degrees) {
 
 function signedAngleDifference(target, current) {
   return ((target - current + 540) % 360) - 180;
+}
+
+// W3C Device Orientation appendix A.1: heading/elevation of the vector
+// perpendicular to the screen and pointing out through the rear camera.
+function cameraOrientation(alpha, beta, gamma) {
+  if (![alpha, beta, gamma].every(Number.isFinite)) return null;
+  const x = toRadians(beta);
+  const y = toRadians(gamma);
+  const z = toRadians(alpha);
+  const cX = Math.cos(x);
+  const cY = Math.cos(y);
+  const cZ = Math.cos(z);
+  const sX = Math.sin(x);
+  const sY = Math.sin(y);
+  const sZ = Math.sin(z);
+  const vx = -cZ * sY - sZ * sX * cY;
+  const vy = -sZ * sY + cZ * sX * cY;
+  const vz = -cX * cY;
+  return {
+    heading: normalizeAngle(toDegrees(Math.atan2(vx, vy))),
+    pitch: toDegrees(Math.asin(Math.max(-1, Math.min(1, vz)))),
+  };
 }
 
 function escapeHtml(value) {
@@ -448,20 +471,37 @@ function nextVisibleEclipse(startDate, centralOnly = false) {
 
 function eclipseArPhases(eclipse) {
   const kind = eclipseKindName(eclipse.kind);
-  const phases = [{ label: "Partial begins", date: eventDate(eclipse.partial_begin) }];
+  const phases = [{ label: "Partial begins", date: eventDate(eclipse.partial_begin), iconSide: -1, visualObscuration: 0.38 }];
   if (kind === "partial") {
-    phases.push({ label: `Maximum partial · ${Math.round(eclipse.obscuration * 100)}%`, date: eventDate(eclipse.peak), primary: true });
+    phases.push({ label: "Maximum eclipse", date: eventDate(eclipse.peak), primary: true, iconSide: 1, visualObscuration: eclipse.obscuration });
   } else {
     const phaseName = kind === "total" ? "Totality" : "Annularity";
     phases.push({
-      label: `${phaseName} ${formatLocationTime(eventDate(eclipse.total_begin), false, true)}–${formatLocationTime(eventDate(eclipse.total_end), false, true)}`,
+      label: phaseName,
       date: eventDate(eclipse.peak),
-      displayTime: `maximum ${formatLocationTime(eventDate(eclipse.peak), false, true)}`,
       primary: true,
+      iconSide: 1,
+      visualObscuration: eclipse.obscuration,
     });
   }
-  phases.push({ label: "Partial ends", date: eventDate(eclipse.partial_end) });
+  phases.push({ label: "Partial ends", date: eventDate(eclipse.partial_end), iconSide: 1, visualObscuration: 0.38 });
   return phases;
+}
+
+function renderPhaseTechnical() {
+  if (!state.eclipse) return;
+  const kind = eclipseKindName(state.eclipse.kind);
+  const phases = [
+    { label: "Partial begins", date: eventDate(state.eclipse.partial_begin) },
+    ...(kind !== "partial" ? [{ label: kind === "total" ? "Totality begins" : "Annularity begins", date: eventDate(state.eclipse.total_begin) }] : []),
+    { label: "Maximum", date: eventDate(state.eclipse.peak) },
+    ...(kind !== "partial" ? [{ label: kind === "total" ? "Totality ends" : "Annularity ends", date: eventDate(state.eclipse.total_end) }] : []),
+    { label: "Partial ends", date: eventDate(state.eclipse.partial_end) },
+  ];
+  document.querySelector("#phase-technical").innerHTML = phases.map((phase) => {
+    const sun = sunPositionAt(phase.date);
+    return `<div><span>${phase.label}</span><b>${formatLocationTime(phase.date, false, true)}</b><small>${sun.azimuth.toFixed(1)}° bearing · ${sun.elevation.toFixed(1)}° elevation</small></div>`;
+  }).join("");
 }
 
 function selectEclipse(eclipse, fit = true) {
@@ -479,6 +519,7 @@ function selectEclipse(eclipse, fit = true) {
   eventEyebrow.textContent = "ECLIPSE LOCATOR";
   eventTitle.textContent = state.locationName;
   arOffscreenLabel.textContent = kind === "partial" ? "Maximum eclipse" : kind === "total" ? "Totality" : "Annularity";
+  renderPhaseTechnical();
   updateCalculations({ fit });
   updateWeatherTimeOptions();
   refreshWeatherAvailability();
@@ -796,29 +837,20 @@ function loadSavedCalibrations() {
 
 function storeSavedCalibrations(calibrations) {
   try {
-    localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrations.slice(0, 20)));
+    localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrations.slice(0, 1)));
     return true;
   } catch {
     return false;
   }
 }
 
-function refreshCalibrationSelect(selectedId = "") {
-  const calibrations = loadSavedCalibrations();
-  arCalibrationSelect.replaceChildren();
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Saved calibrations…";
-  arCalibrationSelect.append(placeholder);
-  for (const calibration of calibrations) {
-    const date = new Date(calibration.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
-    const place = calibration.locationName || (Number.isFinite(calibration.latitude) ? `${calibration.latitude.toFixed(2)}, ${calibration.longitude.toFixed(2)}` : "Unknown location");
-    const option = document.createElement("option");
-    option.value = calibration.id;
-    option.textContent = `${place} · ${date} · ${calibration.horizontalFov.toFixed(1)}° × ${calibration.verticalFov.toFixed(1)}° · error ${calibration.rmsError.toFixed(1)}°`;
-    arCalibrationSelect.append(option);
-  }
-  arCalibrationSelect.value = selectedId;
+function applyRememberedCameraFov() {
+  const calibration = loadSavedCalibrations()[0];
+  if (!calibration || !Number.isFinite(calibration.horizontalFov) || !Number.isFinite(calibration.verticalFov)) return;
+  state.ar.horizontalFov = calibration.horizontalFov;
+  state.ar.verticalFov = calibration.verticalFov;
+  arFov.value = String(Math.round(calibration.horizontalFov));
+  arFovValue.textContent = `${calibration.horizontalFov.toFixed(1)}°`;
 }
 
 function applyCalibration(calibration) {
@@ -980,7 +1012,7 @@ function buildArTargets() {
   return eclipseArPhases(state.eclipse).map((phase) => ({
     ...phase,
     ...sunPositionAt(phase.date),
-    timeLabel: phase.displayTime || formatLocationTime(phase.date, false, true),
+    timeLabel: formatLocationTime(phase.date),
   }));
 }
 
@@ -988,7 +1020,8 @@ function createArMarkers() {
   state.ar.targets = buildArTargets();
   arMarkers.innerHTML = state.ar.targets.map((target, index) => {
     const classes = ["ar-marker", target.primary ? "primary" : ""].filter(Boolean).join(" ");
-    return `<div class="${classes}" data-target="${index}"><div class="ar-marker-dot"></div><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel} · ${target.azimuth.toFixed(1)}° / ${target.elevation.toFixed(1)}°</small></div></div>`;
+    const shift = (1 - Math.max(0, Math.min(1, target.visualObscuration))) * 15 * target.iconSide;
+    return `<div class="${classes}" data-target="${index}"><div class="ar-eclipse-icon" style="--moon-shift:${shift.toFixed(1)}px"></div><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel}</small></div></div>`;
   }).join("");
 }
 
@@ -1072,29 +1105,40 @@ function renderArOverlay() {
 }
 
 function handleOrientation(event) {
+  const camera = cameraOrientation(event.alpha, event.beta, event.gamma);
   let heading = null;
   if (Number.isFinite(event.webkitCompassHeading)) {
     heading = event.webkitCompassHeading;
-  } else if (Number.isFinite(event.alpha)) {
-    const screenAngle = screen.orientation?.angle || window.orientation || 0;
-    heading = normalizeAngle(360 - event.alpha + screenAngle);
+    state.ar.orientationAbsolute = true;
+  } else if (camera && (event.type === "deviceorientationabsolute" || event.absolute === true)) {
+    heading = camera.heading;
+    state.ar.orientationAbsolute = true;
+  } else {
+    if (!state.ar.orientationAbsolute) {
+      state.ar.orientationError = "This browser is providing relative motion only, not a north-referenced compass heading. AR placement cannot be trusted on this device.";
+      updateArReadiness();
+    }
+    return;
   }
-  const pitch = Number.isFinite(event.beta) ? event.beta - 90 : null;
+  const pitch = camera?.pitch ?? null;
   if (Number.isFinite(event.webkitCompassAccuracy)) state.ar.compassAccuracy = event.webkitCompassAccuracy;
   if (heading !== null && pitch !== null) {
-    state.ar.rawHeading = heading;
-    state.ar.rawPitch = pitch;
-    state.ar.validOrientationCount += 1;
-    if (!state.ar.initialOrientation) {
-      state.ar.initialOrientation = { heading, pitch };
-    } else {
-      const headingMotion = Math.abs(signedAngleDifference(heading, state.ar.initialOrientation.heading));
-      const pitchMotion = Math.abs(pitch - state.ar.initialOrientation.pitch);
-      state.ar.orientationMotionDegrees = Math.max(state.ar.orientationMotionDegrees, headingMotion, pitchMotion);
-    }
+    state.ar.orientationError = null;
     const now = performance.now();
     state.ar.orientationHistory.push({ time: now, heading, pitch });
-    state.ar.orientationHistory = state.ar.orientationHistory.filter((sample) => now - sample.time <= 1200);
+    state.ar.orientationHistory = state.ar.orientationHistory.filter((sample) => now - sample.time <= 600);
+    const sinMean = state.ar.orientationHistory.reduce((sum, sample) => sum + Math.sin(toRadians(sample.heading)), 0);
+    const cosMean = state.ar.orientationHistory.reduce((sum, sample) => sum + Math.cos(toRadians(sample.heading)), 0);
+    state.ar.rawHeading = normalizeAngle(toDegrees(Math.atan2(sinMean, cosMean)));
+    state.ar.rawPitch = state.ar.orientationHistory.reduce((sum, sample) => sum + sample.pitch, 0) / state.ar.orientationHistory.length;
+    state.ar.validOrientationCount += 1;
+    if (!state.ar.initialOrientation) {
+      state.ar.initialOrientation = { heading: state.ar.rawHeading, pitch: state.ar.rawPitch };
+    } else {
+      const headingMotion = Math.abs(signedAngleDifference(state.ar.rawHeading, state.ar.initialOrientation.heading));
+      const pitchMotion = Math.abs(state.ar.rawPitch - state.ar.initialOrientation.pitch);
+      state.ar.orientationMotionDegrees = Math.max(state.ar.orientationMotionDegrees, headingMotion, pitchMotion);
+    }
   }
   updateArReadiness();
   renderArOverlay();
@@ -1108,7 +1152,11 @@ async function requestOrientation() {
   }
   if (!state.ar.active) return "AR was closed before orientation initialized.";
   state.ar.orientationPermissionGranted = true;
-  window.addEventListener("deviceorientation", handleOrientation, true);
+  const permissionApi = typeof DeviceOrientationEvent.requestPermission === "function";
+  state.ar.orientationEventNames = permissionApi
+    ? ["deviceorientation"]
+    : ["deviceorientation", ...("ondeviceorientationabsolute" in window ? ["deviceorientationabsolute"] : [])];
+  for (const eventName of state.ar.orientationEventNames) window.addEventListener(eventName, handleOrientation, true);
   return "Camera and orientation active.";
 }
 
@@ -1138,6 +1186,8 @@ async function openArView() {
   state.ar.orientationPermissionGranted = false;
   state.ar.orientationError = null;
   state.ar.orientationReady = false;
+  state.ar.orientationAbsolute = false;
+  state.ar.orientationEventNames = [];
   state.ar.validOrientationCount = 0;
   state.ar.initialOrientation = null;
   state.ar.orientationMotionDegrees = 0;
@@ -1149,18 +1199,19 @@ async function openArView() {
   createArMarkers();
   arMarkers.hidden = true;
   arOffscreenArrow.hidden = true;
-  refreshCalibrationSelect();
+  applyRememberedCameraFov();
   arStatus.textContent = "Requesting orientation and camera access…";
 
   if (TEST_MODE) {
+    const primaryTarget = state.ar.targets.find((target) => target.primary) || state.ar.targets[0];
     state.ar.cameraReady = true;
     state.ar.orientationPermissionGranted = true;
     state.ar.orientationReady = true;
-    state.ar.rawHeading = 200;
-    state.ar.rawPitch = 25;
+    state.ar.rawHeading = primaryTarget.azimuth;
+    state.ar.rawPitch = primaryTarget.elevation;
     state.ar.validOrientationCount = 10;
     state.ar.orientationMotionDegrees = 5;
-    state.ar.orientationHistory = Array.from({ length: 8 }, () => ({ heading: 200, pitch: 25 }));
+    state.ar.orientationHistory = Array.from({ length: 8 }, () => ({ heading: primaryTarget.azimuth, pitch: primaryTarget.elevation }));
     arStatus.textContent = "Test mode: simulated camera and orientation are active.";
     arMarkers.hidden = false;
     renderArOverlay();
@@ -1190,6 +1241,7 @@ function closeArView() {
   state.ar.orientationPermissionGranted = false;
   state.ar.orientationError = null;
   state.ar.orientationReady = false;
+  state.ar.orientationAbsolute = false;
   arView.classList.remove("calibrating");
   arMainControls.hidden = false;
   arCalibrationSettings.hidden = true;
@@ -1197,7 +1249,8 @@ function closeArView() {
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
-  window.removeEventListener("deviceorientation", handleOrientation, true);
+  for (const eventName of state.ar.orientationEventNames) window.removeEventListener(eventName, handleOrientation, true);
+  state.ar.orientationEventNames = [];
   if (state.ar.stream) state.ar.stream.getTracks().forEach((track) => track.stop());
   state.ar.stream = null;
   arVideo.srcObject = null;
@@ -1310,7 +1363,6 @@ function finishSunCalibration() {
   const calibrations = [calibration, ...loadSavedCalibrations()];
   const stored = storeSavedCalibrations(calibrations);
   applyCalibration(calibration);
-  refreshCalibrationSelect(calibration.id);
   cancelSunCalibration(`Calibration ${stored ? "saved" : "applied but could not be saved"}: ${horizontalFov.toFixed(1)}° × ${verticalFov.toFixed(1)}° FOV, ${rmsError.toFixed(1)}° fit error.`, false);
 }
 
@@ -1544,7 +1596,7 @@ document.querySelector("#ar-button").addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
 document.querySelector("#ar-open-calibration").addEventListener("click", () => {
   arMainControls.hidden = true;
-  arCalibrationSettings.hidden = false;
+  arFilterCheck.hidden = false;
 });
 document.querySelector("#ar-close-calibration").addEventListener("click", () => {
   arCalibrationSettings.hidden = true;
@@ -1565,22 +1617,6 @@ document.querySelector("#ar-filter-cancel").addEventListener("click", () => {
 });
 document.querySelector("#ar-capture-calibration").addEventListener("click", captureSunCalibration);
 document.querySelector("#ar-cancel-calibration").addEventListener("click", () => cancelSunCalibration());
-document.querySelector("#ar-apply-calibration").addEventListener("click", () => {
-  const calibration = loadSavedCalibrations().find((candidate) => candidate.id === arCalibrationSelect.value);
-  if (calibration) applyCalibration(calibration);
-  else arStatus.textContent = "Choose a saved calibration first.";
-});
-document.querySelector("#ar-delete-calibration").addEventListener("click", () => {
-  const selectedId = arCalibrationSelect.value;
-  if (!selectedId) {
-    arStatus.textContent = "Choose a saved calibration first.";
-    return;
-  }
-  if (!window.confirm("Delete this saved AR calibration?")) return;
-  storeSavedCalibrations(loadSavedCalibrations().filter((calibration) => calibration.id !== selectedId));
-  refreshCalibrationSelect();
-  arStatus.textContent = "Saved calibration deleted.";
-});
 arFov.addEventListener("input", () => {
   state.ar.horizontalFov = Number(arFov.value);
   const stageRatio = arView.clientHeight / Math.max(arView.clientWidth, 1);
@@ -1614,7 +1650,6 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
     if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
   });
 });
-refreshCalibrationSelect();
 prepareLocationGate();
 renderSavedLocations();
 const sharedLocation = sharedLocationFromUrl();

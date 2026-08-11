@@ -86,6 +86,15 @@ try {
     if (Math.abs(check.actual.elevationDeg - check.expectedElevationDeg) >= 0.03) throw new Error(`IMCCE altitude check failed at ${check.time}: ${JSON.stringify(check)}`);
   }
   console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
+  const orientationChecks = await page.evaluate(() => [
+    { actual: cameraOrientation(0, 90, 0), heading: 0, pitch: 0 },
+    { actual: cameraOrientation(180, 90, 0), heading: 180, pitch: 0 },
+    { actual: cameraOrientation(0, 120, 0), heading: 0, pitch: 30 },
+  ]);
+  for (const check of orientationChecks) {
+    if (Math.abs(check.actual.heading - check.heading) > 0.01 || Math.abs(check.actual.pitch - check.pitch) > 0.01) throw new Error(`Rear-camera orientation conversion failed: ${JSON.stringify(check)}`);
+  }
+  if (await page.locator("#phase-technical > div").count() !== 5) throw new Error("Expected detailed total-eclipse phases under technical details");
   await page.locator(".saved-eclipse-heading button").first().click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
   if (await page.locator(".weather-result").count() !== 1) throw new Error("Expected one result for the initially saved location");
@@ -132,7 +141,13 @@ try {
   if (await page.locator(".eclipse-symbol").count() !== 3) throw new Error("Expected central and partial eclipse sightline symbols");
   await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
   await page.locator("#ar-button").click();
+  if ((await page.locator(".ar-marker small").allTextContents()).some((label) => label.includes("°"))) throw new Error("AR labels should show times without angles");
+  if (await page.locator(".ar-eclipse-icon").count() !== 3) throw new Error("Expected eclipse-phase icons in AR");
+  await page.screenshot({ path: "test-artifacts/ar.png" });
   await page.locator("#ar-open-calibration").click();
+  await page.locator("#ar-filter-check").waitFor({ state: "visible" });
+  await page.locator("#ar-filter-cancel").click();
+  await page.locator("#ar-calibration-settings").waitFor({ state: "visible" });
   await page.locator("#ar-calibrate").click();
   await page.locator("#ar-filter-confirm").click();
   await page.locator("#ar-calibration-panel").waitFor({ state: "visible" });
@@ -144,7 +159,7 @@ try {
   await page.locator("#ar-status").filter({ hasText: "Calibration saved" }).waitFor();
 
   if (failures.length) throw new Error(failures.join("\n"));
-  console.log("UI smoke test passed. Screenshots: test-artifacts/opening.png, planner.png, main.png and calibration.png");
+  console.log("UI smoke test passed. Screenshots: test-artifacts/opening.png, planner.png, main.png, ar.png and calibration.png");
 } finally {
   await browser.close();
   await new Promise((resolveClose) => server.close(resolveClose));

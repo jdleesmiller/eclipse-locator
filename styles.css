@@ -167,6 +167,11 @@ button.active { background: #f47d4b; }
 .terrain-details summary, .technical-details summary { cursor: pointer; color: #b9d8ef; font-weight: 700; }
 .technical-details > summary { color: var(--ink); font-size: 14px; }
 .technical-details .section-heading { margin-top: 12px; }
+.phase-technical { display: grid; gap: 5px; padding-top: 2px; }
+.phase-technical > div { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; border-radius: 7px; background: rgba(255,255,255,.035); }
+.phase-technical span { color: #d7e2ea; }
+.phase-technical b { color: white; font-size: 10px; }
+.phase-technical small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; }
 .saved-locations-card { margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
 .saved-eclipse-group { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
 .saved-eclipse-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
@@ -228,8 +233,9 @@ button.active { background: #f47d4b; }
 .ar-calibration-target::before { width: 62px; height: 1px; }
 .ar-calibration-target::after { width: 1px; height: 62px; }
 .ar-marker { position: absolute; min-width: 82px; transform: translate(-50%, -50%); text-align: center; transition: opacity .12s; }
-.ar-marker-dot { width: 16px; height: 16px; margin: 0 auto 4px; border: 3px solid #fff; border-radius: 50%; background: #ef8650; box-shadow: 0 0 0 3px rgba(239,134,80,.35), 0 2px 7px #000; }
-.ar-marker.primary .ar-marker-dot { width: 24px; height: 24px; border-color: var(--accent); background: #101820; box-shadow: 0 0 0 5px rgba(255,207,74,.32), 0 0 18px var(--accent); }
+.ar-eclipse-icon { position: relative; width: 19px; height: 19px; margin: 0 auto 4px; overflow: hidden; border: 2px solid white; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(255,207,74,.26), 0 2px 7px #000; }
+.ar-eclipse-icon::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; background: #071525; transform: translateX(var(--moon-shift)); }
+.ar-marker.primary .ar-eclipse-icon { width: 27px; height: 27px; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255,207,74,.3), 0 0 16px var(--accent); }
 .ar-marker b, .ar-marker small { display: block; color: white; font-size: 10px; text-shadow: 0 1px 4px #000, 1px 0 3px #000; }
 .ar-marker small { color: #dce8f1; font-size: 9px; }
 .ar-marker.primary .ar-marker-label { transform: translateY(-46px); }
@@ -244,9 +250,6 @@ button.active { background: #f47d4b; }
 .ar-control-row label { display: flex; justify-content: space-between; font-size: 10px; color: #d1dee8; }
 .ar-control-row label span { display: inline; margin: 0; color: var(--accent); }
 .ar-control-row input { width: 100%; min-width: 0; padding: 0; accent-color: var(--accent); }
-.saved-calibrations { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-top: 8px; }
-.saved-calibrations select { min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: #10253a; color: var(--ink); font-size: 10px; }
-.saved-calibrations button { min-height: 34px; padding: 5px 9px; font-size: 10px; }
 .ar-calibration-panel p { margin: 7px 0 9px; color: white; font-size: 12px; line-height: 1.35; }
 .ar-calibration-panel > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .ar-calibration-panel button { min-height: 40px; padding: 6px 10px; }
