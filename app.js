@@ -22,6 +22,8 @@ const CALIBRATION_POINTS = [
 
 const state = {
   observer: null,
+  deviceLocation: null,
+  deviceLocationAccuracyM: null,
   locationName: "",
   locationTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   eclipse: null,
@@ -62,6 +64,7 @@ const state = {
 };
 
 const observerIcon = L.divIcon({ className: "", html: '<div class="observer-pin"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+const placeIcon = L.divIcon({ className: "", html: '<div class="place-pin"></div>', iconSize: [26, 32], iconAnchor: [13, 31] });
 let map = null;
 let observerMarker = null;
 let sightlineLayer = null;
@@ -75,6 +78,7 @@ const directionOutput = document.querySelector("#direction");
 const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
 const profileCloudKey = document.querySelector("#profile-cloud-key");
+const profileCloudCaption = document.querySelector("#profile-cloud-caption");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
 const arView = document.querySelector("#ar-view");
@@ -120,6 +124,9 @@ const savedLocationCount = document.querySelector("#saved-location-count");
 const savedLocationsCard = document.querySelector("#saved-locations-card");
 const savedComparison = document.querySelector("#saved-comparison");
 const shareStatus = document.querySelector("#share-status");
+const arButton = document.querySelector("#ar-button");
+const arEntrySafety = document.querySelector("#ar-entry-safety");
+const arLocationNote = document.querySelector("#ar-location-note");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -234,7 +241,30 @@ function updateUrlState() {
   params.set("eclipse", eventDate(state.eclipse.peak).toISOString());
   const note = savedCurrentLocation()?.notes?.trim();
   if (note) params.set("note", note);
-  history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
+  history.replaceState({ view: locationGate.hidden ? "map" : "gate" }, "", `${window.location.pathname}?${params}${window.location.hash}`);
+}
+
+function observerMatchesDevice() {
+  if (!state.observer || !state.deviceLocation) return false;
+  if (Number.isFinite(state.deviceLocationAccuracyM) && state.deviceLocationAccuracyM > 2000) return false;
+  const distanceM = L.latLng(state.observer).distanceTo(L.latLng(state.deviceLocation));
+  const toleranceM = Math.max(250, Math.min(1500, (state.deviceLocationAccuracyM || 100) * 2));
+  return distanceM <= toleranceM;
+}
+
+function refreshObserverContext() {
+  const matches = observerMatchesDevice();
+  if (observerMarker) observerMarker.setIcon(matches ? observerIcon : placeIcon);
+  arButton.hidden = !matches;
+  arEntrySafety.hidden = !matches;
+  arLocationNote.hidden = matches;
+  if (!matches) {
+    arLocationNote.textContent = state.deviceLocation && state.deviceLocationAccuracyM > 2000
+      ? "Camera view is hidden because your current-location fix is not accurate enough."
+      : state.deviceLocation
+        ? "Camera view is hidden because this viewing point differs from your current location."
+        : "Use your current location to enable the camera view for this viewing point.";
+  }
 }
 
 function sunPositionAt(date) {
@@ -249,7 +279,7 @@ function initializeMap() {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
-  observerMarker = L.marker(state.observer, { icon: observerIcon, draggable: true, zIndexOffset: 1000 }).addTo(map);
+  observerMarker = L.marker(state.observer, { icon: placeIcon, draggable: true, zIndexOffset: 1000 }).addTo(map);
   sightlineLayer = L.layerGroup().addTo(map);
   terrainLayer = L.layerGroup().addTo(map);
   observerMarker.on("dragend", (event) => setObserver(event.target.getLatLng(), "Observer moved to"));
@@ -805,7 +835,11 @@ function findAndSelectRequestedEclipse(peakValue, fit = true) {
   }
 }
 
-function activateLocation(location, { eclipsePeak, seedNote, keepGate = false } = {}) {
+function activateLocation(location, { eclipsePeak, seedNote, keepGate = false, skipHistory = false } = {}) {
+  const wasGateVisible = !locationGate.hidden;
+  if (!keepGate && !skipHistory && !wasGateVisible && state.observer) {
+    history.pushState({ view: "map" }, "", window.location.href);
+  }
   const currentPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: Number(location.lat), lng: Number(location.lng) };
   state.locationName = location.name || `${state.observer.lat.toFixed(4)}, ${state.observer.lng.toFixed(4)}`;
@@ -818,6 +852,8 @@ function activateLocation(location, { eclipsePeak, seedNote, keepGate = false } 
   observerMarker.setLatLng(state.observer);
   map.setView(state.observer, 9);
   locationGate.hidden = !keepGate;
+  if (!keepGate && !skipHistory && wasGateVisible) history.pushState({ view: "map" }, "", window.location.href);
+  refreshObserverContext();
   if (!keepGate) panel.scrollTop = 0;
   statusOutput.textContent = "";
   const requestedPeak = eclipsePeak || location.eclipsePeak || currentPeak;
@@ -891,20 +927,46 @@ function cloudColour(percent) {
 }
 
 function currentCloudDistanceProfile(maxDistanceKm) {
-  if (!state.weather.results || !state.observer) return [];
-  const result = state.weather.results.find((candidate) => candidate.id === locationId(state.observer));
-  if (!result?.debug?.samples) return [];
-  const groups = new Map();
-  for (const sample of result.debug.samples) {
-    if (sample.distanceKm > maxDistanceKm || !Number.isFinite(sample.lowTarget)) continue;
-    const values = groups.get(sample.distanceKm) || [];
-    values.push(sample.lowTarget);
-    groups.set(sample.distanceKm, values);
+  if (!state.observer) return [];
+  const currentId = locationId(state.observer);
+  const result = state.weather.results?.find((candidate) => candidate.id === currentId);
+  if (result?.debug?.samples) {
+    const groups = new Map();
+    for (const sample of result.debug.samples) {
+      if (sample.distanceKm > maxDistanceKm || !Number.isFinite(sample.lowTarget)) continue;
+      const values = groups.get(sample.distanceKm) || [];
+      values.push(sample.lowTarget);
+      groups.set(sample.distanceKm, values);
+    }
+    return [...groups].map(([distanceKm, values]) => ({
+      distanceKm,
+      lowCloudPct: values.reduce((sum, value) => sum + value, 0) / values.length,
+    })).sort((a, b) => a.distanceKm - b.distanceKm);
   }
-  return [...groups].map(([distanceKm, values]) => ({
-    distanceKm,
-    lowCloudPct: values.reduce((sum, value) => sum + value, 0) / values.length,
-  })).sort((a, b) => a.distanceKm - b.distanceKm);
+  const digestCandidate = loadPreviousWeatherDigest()?.candidates?.find((candidate) => candidate.id === currentId);
+  if (digestCandidate?.lowCloudDistanceProfile?.length) {
+    return digestCandidate.lowCloudDistanceProfile.filter((sample) => sample.distanceKm <= maxDistanceKm);
+  }
+  const target = digestCandidate?.weather?.target;
+  if (!target) return [];
+  const landmarks = [
+    { distanceKm: 0, lowCloudPct: target.lowCloudAtObserverPct },
+    { distanceKm: 10, lowCloudPct: target.low.km10.wedgeMean },
+    { distanceKm: 25, lowCloudPct: target.low.km25.wedgeMean },
+    { distanceKm: 50, lowCloudPct: target.low.km50.wedgeMean },
+  ].filter((sample) => Number.isFinite(sample.lowCloudPct));
+  if (landmarks.length < 2) return landmarks.filter((sample) => sample.distanceKm <= maxDistanceKm);
+  const stepKm = Math.max(0.25, maxDistanceKm / 40);
+  const profile = [];
+  for (let distanceKm = 0; distanceKm < maxDistanceKm; distanceKm += stepKm) {
+    const rightIndex = landmarks.findIndex((sample) => sample.distanceKm >= distanceKm);
+    const right = landmarks[rightIndex < 0 ? landmarks.length - 1 : rightIndex];
+    const left = landmarks[Math.max(0, (rightIndex < 0 ? landmarks.length : rightIndex) - 1)];
+    const fraction = right.distanceKm === left.distanceKm ? 0 : (distanceKm - left.distanceKm) / (right.distanceKm - left.distanceKm);
+    profile.push({ distanceKm, lowCloudPct: left.lowCloudPct + (right.lowCloudPct - left.lowCloudPct) * Math.max(0, Math.min(1, fraction)) });
+  }
+  profile.push({ distanceKm: maxDistanceKm, lowCloudPct: profile[profile.length - 1]?.lowCloudPct ?? landmarks[0].lowCloudPct });
+  return profile;
 }
 
 function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
@@ -926,13 +988,14 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const grid = [minValue, minValue + range / 2, maxValue].map((value) => `<line x1="${pad.left}" y1="${y(value)}" x2="${width - pad.right}" y2="${y(value)}" stroke="rgba(255,255,255,.09)"/><text x="${pad.left - 4}" y="${y(value) + 3}" fill="#9cabb9" font-size="8" text-anchor="end">${Math.round(value)}m</text>`).join("");
   const cloudProfile = currentCloudDistanceProfile(maxDistanceKm);
   profileCloudKey.hidden = cloudProfile.length === 0;
-  const cloudY = height - 25;
+  profileCloudCaption.hidden = cloudProfile.length === 0;
+  const cloudY = height - 29;
   const cloudStrip = cloudProfile.map((sample, index) => {
     const previous = cloudProfile[index - 1];
     const next = cloudProfile[index + 1];
     const startDistance = previous ? (previous.distanceKm + sample.distanceKm) / 2 : 0;
     const endDistance = next ? (sample.distanceKm + next.distanceKm) / 2 : Math.min(maxDistanceKm, sample.distanceKm + 1.25);
-    return `<rect x="${x(startDistance).toFixed(1)}" y="${cloudY}" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="8" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
+    return `<rect x="${x(startDistance).toFixed(1)}" y="${cloudY}" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="12" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
   }).join("");
 
   terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres${cloudProfile.length ? ", with mean low-cloud percentage across the sampled wedge" : ""}">
@@ -941,7 +1004,7 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
     <polyline points="${terrainPoints}" fill="none" stroke="#8fa6b8" stroke-width="2"/>
     <polyline points="${rayPoints}" fill="none" stroke="#ffcf4a" stroke-width="2.5"/>
     ${cloudStrip}
-    ${cloudProfile.length ? `<text x="${pad.left - 4}" y="${cloudY + 7}" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>` : ""}
+    ${cloudProfile.length ? `<text x="${pad.left - 4}" y="${cloudY + 9}" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>` : ""}
     <text x="${pad.left}" y="${height - 5}" fill="#9cabb9" font-size="8">0 km</text>
     <text x="${width - pad.right}" y="${height - 5}" fill="#9cabb9" font-size="8" text-anchor="end">${maxDistanceKm} km</text>
   </svg>`;
@@ -1389,15 +1452,16 @@ function renderSightline() {
 
   const origin = [state.observer.lat, state.observer.lng];
   const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
+  const arrowBase = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM - 4);
   const left = destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, MAX_DISTANCE_KM);
   const right = destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, MAX_DISTANCE_KM);
 
   L.polygon([origin, left, right], { color: "#f7a928", weight: 1, opacity: 0.75, fillColor: "#ffcf4a", fillOpacity: 0.18, interactive: false }).addTo(sightlineLayer);
-  L.polyline([origin, end], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
-  L.polyline([origin, end], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
+  L.polyline([origin, arrowBase], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
+  L.polyline([origin, arrowBase], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
   const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, MAX_DISTANCE_KM - 4);
   const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, MAX_DISTANCE_KM - 4);
-  L.polygon([end, arrowLeft, arrowRight], { color: "#ed7b21", weight: 1, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
+  L.polygon([end, arrowLeft, arrowRight], { stroke: false, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
 
   const symbolDistanceKm = 35;
   const kind = eclipseKindName(state.eclipse?.kind);
@@ -1428,6 +1492,7 @@ function updateCalculations({ fit = false } = {}) {
   directionOutput.textContent = compassPoint(state.azimuth);
 
   observerMarker.setLatLng(state.observer);
+  refreshObserverContext();
   renderSightline();
   loadTerrain();
   if (state.ar.active) {
@@ -1441,6 +1506,7 @@ function updateCalculations({ fit = false } = {}) {
 }
 
 function setObserver(latlng, message, fit = false) {
+  history.pushState({ view: "map" }, "", window.location.href);
   const selectedPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: latlng.lat, lng: latlng.lng };
   state.locationName = `Custom location ${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
@@ -1460,6 +1526,8 @@ function locateUser(fromGate = false) {
   else statusOutput.textContent = "Finding your location…";
   navigator.geolocation.getCurrentPosition(
     (position) => {
+      state.deviceLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+      state.deviceLocationAccuracyM = position.coords.accuracy;
       activateLocation({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
@@ -1469,6 +1537,9 @@ function locateUser(fromGate = false) {
       if (position.coords.accuracy > 1000) statusOutput.textContent = `Location accuracy is poor (approximately ±${Math.round(position.coords.accuracy / 100) / 10} km). Choose or move the viewing point before relying on the sightline.`;
     },
     () => {
+      state.deviceLocation = null;
+      state.deviceLocationAccuracyM = null;
+      refreshObserverContext();
       locationGate.hidden = false;
       gateStatus.textContent = "Location permission was unavailable. Search for a city or place instead.";
     },
@@ -1535,18 +1606,18 @@ function inspectPoint(latlng) {
     .openOn(map);
 }
 
-function sharedLocationFromUrl() {
-  if (!INITIAL_URL_PARAMS.has("lat") || !INITIAL_URL_PARAMS.has("lng")) return null;
-  const lat = Number(INITIAL_URL_PARAMS.get("lat"));
-  const lng = Number(INITIAL_URL_PARAMS.get("lng"));
+function sharedLocationFromUrl(params = new URLSearchParams(window.location.search)) {
+  if (!params.has("lat") || !params.has("lng")) return null;
+  const lat = Number(params.get("lat"));
+  const lng = Number(params.get("lng"));
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -85 || lat > 85 || lng < -180 || lng > 180) return null;
   return {
     lat,
     lng,
-    name: INITIAL_URL_PARAMS.get("name") || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-    timezone: INITIAL_URL_PARAMS.get("tz") || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    eclipsePeak: INITIAL_URL_PARAMS.get("eclipse") || undefined,
-    notes: INITIAL_URL_PARAMS.get("note") || undefined,
+    name: params.get("name") || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+    timezone: params.get("tz") || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    eclipsePeak: params.get("eclipse") || undefined,
+    notes: params.get("note") || undefined,
   };
 }
 
@@ -1592,7 +1663,7 @@ document.querySelector("#place-search-form").addEventListener("submit", async (e
     gateStatus.textContent = `Place search unavailable: ${error.message}`;
   }
 });
-document.querySelector("#ar-button").addEventListener("click", openArView);
+arButton.addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
 document.querySelector("#ar-open-calibration").addEventListener("click", () => {
   arMainControls.hidden = true;
@@ -1624,7 +1695,10 @@ arFov.addEventListener("input", () => {
   arFovValue.textContent = `${arFov.value}°`;
   renderArOverlay();
 });
-document.querySelector("#choose-location-button").addEventListener("click", () => { locationGate.hidden = false; });
+document.querySelector("#choose-location-button").addEventListener("click", () => {
+  locationGate.hidden = false;
+  history.pushState({ view: "gate" }, "", window.location.href);
+});
 document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
 document.querySelector("#share-button").addEventListener("click", shareCurrentView);
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
@@ -1652,6 +1726,20 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
 });
 prepareLocationGate();
 renderSavedLocations();
+history.replaceState({ view: "gate" }, "", window.location.href);
+window.addEventListener("popstate", (event) => {
+  eclipseExplorer.hidden = true;
+  if (event.state?.view === "gate") {
+    locationGate.hidden = false;
+    return;
+  }
+  const location = sharedLocationFromUrl();
+  if (location) activateLocation(location, { eclipsePeak: location.eclipsePeak, seedNote: location.notes, skipHistory: true });
+});
 const sharedLocation = sharedLocationFromUrl();
 if (sharedLocation) activateLocation(sharedLocation, { eclipsePeak: sharedLocation.eclipsePeak, seedNote: sharedLocation.notes });
-else if (TEST_MODE) activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });
+else if (TEST_MODE) {
+  state.deviceLocation = { lat: 43.5322, lng: -5.6611 };
+  state.deviceLocationAccuracyM = 10;
+  activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });
+}

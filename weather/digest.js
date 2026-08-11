@@ -41,6 +41,20 @@
     return { weatherRating: weather, terrainRating: terrain, trendRating: candidate.trend.classification, recommendation };
   }
 
+  function lowCloudDistanceProfile(candidate) {
+    const groups = new Map();
+    for (const sample of candidate.debug?.samples || []) {
+      if (!Number.isFinite(sample.distanceKm) || !Number.isFinite(sample.lowTarget)) continue;
+      const values = groups.get(sample.distanceKm) || [];
+      values.push(sample.lowTarget);
+      groups.set(sample.distanceKm, values);
+    }
+    return [...groups].map(([distanceKm, values]) => ({
+      distanceKm,
+      lowCloudPct: Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)),
+    })).sort((a, b) => a.distanceKm - b.distanceKm);
+  }
+
   function enrichCandidates(candidates, previousDigest) {
     const rank = { "strong candidate": 3, viable: 2, risky: 1, unsuitable: 0 };
     return candidates.map((candidate) => {
@@ -75,6 +89,7 @@
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
         weather: candidate.weather,
+        lowCloudDistanceProfile: lowCloudDistanceProfile(candidate),
         trend: candidate.trend,
         overall: { ...candidate.overall, weatherScore: candidate.score },
         ...(includeDebug ? { debug: candidate.debug } : {}),

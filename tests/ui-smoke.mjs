@@ -55,11 +55,17 @@ try {
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
   if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
+  await page.evaluate(() => history.back());
+  await page.locator("#location-gate").waitFor({ state: "visible" });
+  await page.evaluate(() => history.forward());
+  await page.locator("#location-gate").waitFor({ state: "hidden" });
+  await page.locator("#event-kind").waitFor({ state: "visible" });
   await page.locator("#cloud-result").filter({ hasText: "% low" }).waitFor();
   await page.locator("#choose-location-button").click();
   await page.locator("#saved-locations-card").waitFor({ state: "visible" });
   await page.screenshot({ path: "test-artifacts/opening.png", fullPage: true });
   if (await page.locator(".saved-location").count() !== 1) throw new Error("Expected the loaded location to be saved for this eclipse");
+  if (Number.parseFloat(await page.locator(".saved-location-open").first().evaluate((element) => getComputedStyle(element).fontSize)) < 13) throw new Error("Saved location links are too small");
   if (await page.locator("#weather-legend img").count() !== 0) throw new Error("Expected the local horizontal weather legend, not a remote image");
   await page.getByRole("button", { name: /Rename/ }).first().click();
   const savedName = page.locator(".saved-location-name").first();
@@ -106,6 +112,7 @@ try {
   if (digest.validTimes.before !== "2026-08-12T18:00:00.000Z" || digest.validTimes.after !== "2026-08-12T19:00:00.000Z") throw new Error("Digest interpolation window is incorrect");
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
   if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
+  if (!digest.candidates.every((candidate) => candidate.lowCloudDistanceProfile?.length >= 20)) throw new Error("Digest is missing the compact low-cloud distance profile");
   if (digest.candidates[0].notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
   if (digest.candidates[0].name !== "Edited smoke-test location") throw new Error("Digest is missing the edited saved location name");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");
@@ -136,6 +143,7 @@ try {
   await page.locator("#terrain-result").filter({ hasText: /OK|Concerning|Obstructed/ }).waitFor();
   await page.locator(".terrain-details summary").click();
   if (await page.locator("#terrain-profile rect").count() < 1) throw new Error("Expected a distance-based low-cloud strip in the terrain profile");
+  if (!await page.locator("#profile-cloud-caption").isVisible()) throw new Error("Expected a visible explanation above the low-cloud strip");
   if (!await page.locator("#profile-cloud-key").isVisible()) throw new Error("Expected the terrain profile low-cloud legend");
   if (await page.locator(".distance-label").count() !== 0) throw new Error("Distance-ring labels should be removed");
   if (await page.locator(".eclipse-symbol").count() !== 3) throw new Error("Expected central and partial eclipse sightline symbols");
@@ -157,6 +165,15 @@ try {
     await page.locator("#ar-capture-calibration").click();
   }
   await page.locator("#ar-status").filter({ hasText: "Calibration saved" }).waitFor();
+
+  await page.locator("#ar-close").click();
+  await page.evaluate(() => setObserver({ lat: 44.5, lng: -5.6 }, "Smoke-test alternate place"));
+  await page.locator("#ar-button").waitFor({ state: "hidden" });
+  if (await page.locator(".place-pin").count() !== 1) throw new Error("A selected place away from the device should use a map pin");
+  if (!await page.locator("#ar-location-note").isVisible()) throw new Error("Expected an explanation when camera view is unavailable away from the device");
+  await page.evaluate(() => history.back());
+  await page.locator("#ar-button").waitFor({ state: "visible" });
+  if (await page.locator(".observer-pin").count() !== 1) throw new Error("The device-matched observer should use the current-location dot");
 
   if (failures.length) throw new Error(failures.join("\n"));
   console.log("UI smoke test passed. Screenshots: test-artifacts/opening.png, planner.png, main.png, ar.png and calibration.png");
