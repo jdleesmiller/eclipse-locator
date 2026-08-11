@@ -94,6 +94,8 @@ const arCalibrationPanel = document.querySelector("#ar-calibration-panel");
 const arCalibrationTarget = document.querySelector("#ar-calibration-target");
 const arCalibrationInstruction = document.querySelector("#ar-calibration-instruction");
 const arFilterCheck = document.querySelector("#ar-filter-check");
+const arCalibrationUnavailable = document.querySelector("#ar-calibration-unavailable");
+const arCalibrationUnavailableReason = document.querySelector("#ar-calibration-unavailable-reason");
 const eclipseExplorer = document.querySelector("#eclipse-explorer");
 const locationGate = document.querySelector("#location-gate");
 const panel = document.querySelector(".panel");
@@ -1083,9 +1085,15 @@ function createArMarkers() {
   state.ar.targets = buildArTargets();
   arMarkers.innerHTML = state.ar.targets.map((target, index) => {
     const classes = ["ar-marker", target.primary ? "primary" : ""].filter(Boolean).join(" ");
-    const shift = (1 - Math.max(0, Math.min(1, target.visualObscuration))) * 15 * target.iconSide;
-    return `<div class="${classes}" data-target="${index}"><div class="ar-eclipse-icon" style="--moon-shift:${shift.toFixed(1)}px"></div><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel}</small></div></div>`;
+    const shift = (1 - Math.max(0, Math.min(1, target.visualObscuration))) * 19 * target.iconSide;
+    const moonX = 16 + shift;
+    return `<div class="${classes}" data-target="${index}"><svg class="ar-eclipse-icon" viewBox="0 0 32 32" aria-hidden="true"><circle class="ar-sun-disc" cx="16" cy="16" r="12"/><circle class="ar-moon-disc" cx="${moonX.toFixed(1)}" cy="16" r="12"/><circle class="ar-eclipse-outline" cx="16" cy="16" r="13.5"/></svg><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel}</small></div></div>`;
   }).join("");
+}
+
+function setArStatus(message, tone = "waiting") {
+  arStatus.textContent = message;
+  arStatus.className = `ar-status-${tone}`;
 }
 
 function updateArReadiness() {
@@ -1095,27 +1103,27 @@ function updateArReadiness() {
   state.ar.orientationReady = state.ar.orientationPermissionGranted && enoughReadings && motionDetected && !accuracyBlocks;
 
   if (state.ar.cameraError) {
-    arStatus.textContent = `Camera unavailable: ${state.ar.cameraError}`;
+    setArStatus(`Camera unavailable: ${state.ar.cameraError}`, "error");
   } else if (!state.ar.cameraReady) {
-    arStatus.textContent = "Starting rear camera…";
+    setArStatus("Starting rear camera…");
   } else if (state.ar.orientationError) {
-    arStatus.textContent = state.ar.orientationError;
+    setArStatus(`${state.ar.orientationError} Android does not provide a separate compass permission that this website can request. Check Chrome Settings → Site settings → Motion sensors.`, "error");
   } else if (!state.ar.orientationPermissionGranted) {
-    arStatus.textContent = "Waiting for orientation permission…";
+    setArStatus("Waiting for orientation permission…");
   } else if (accuracyBlocks) {
-    arStatus.textContent = "Compass accuracy is very poor. Move away from metal or magnets, then move the phone gently.";
+    setArStatus("Compass accuracy is very poor. Move away from metal or magnets, then move the phone gently.", "error");
   } else if (!enoughReadings || !motionDetected) {
-    arStatus.textContent = "Initializing compass—move the phone gently through a small arc.";
+    setArStatus("Initializing compass—move the phone gently through a small arc.");
   } else if (Number.isFinite(state.ar.compassAccuracy) && state.ar.compassAccuracy > 25) {
-    arStatus.textContent = `AR active, but compass accuracy is only about ±${Math.round(state.ar.compassAccuracy)}°. Move away from metal or magnets.`;
+    setArStatus(`AR active, but compass accuracy is only about ±${Math.round(state.ar.compassAccuracy)}°. Move away from metal or magnets.`, "warning");
     state.ar.compassWarningActive = true;
     state.ar.readyAnnounced = true;
   } else if (state.ar.compassWarningActive) {
-    arStatus.textContent = "AR ready. Compass accuracy has improved.";
+    setArStatus("AR ready. Compass accuracy has improved.", "ready");
     state.ar.compassWarningActive = false;
   } else if (!state.ar.readyAnnounced) {
     const accuracy = Number.isFinite(state.ar.compassAccuracy) && state.ar.compassAccuracy >= 0 ? ` Compass accuracy approximately ±${Math.round(state.ar.compassAccuracy)}°.` : "";
-    arStatus.textContent = `AR ready.${accuracy}`;
+    setArStatus(`AR ready.${accuracy}`, "ready");
     state.ar.readyAnnounced = true;
   }
 }
@@ -1263,7 +1271,7 @@ async function openArView() {
   arMarkers.hidden = true;
   arOffscreenArrow.hidden = true;
   applyRememberedCameraFov();
-  arStatus.textContent = "Requesting orientation and camera access…";
+  setArStatus("Requesting orientation and camera access…");
 
   if (TEST_MODE) {
     const primaryTarget = state.ar.targets.find((target) => target.primary) || state.ar.targets[0];
@@ -1275,7 +1283,7 @@ async function openArView() {
     state.ar.validOrientationCount = 10;
     state.ar.orientationMotionDegrees = 5;
     state.ar.orientationHistory = Array.from({ length: 8 }, () => ({ heading: primaryTarget.azimuth, pitch: primaryTarget.elevation }));
-    arStatus.textContent = "Test mode: simulated camera and orientation are active.";
+    setArStatus("Test mode: simulated camera and orientation are active.", "ready");
     arMarkers.hidden = false;
     renderArOverlay();
     return;
@@ -1309,6 +1317,7 @@ function closeArView() {
   arMainControls.hidden = false;
   arCalibrationSettings.hidden = true;
   arFilterCheck.hidden = true;
+  arCalibrationUnavailable.hidden = true;
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
@@ -1327,16 +1336,33 @@ function showCalibrationStep() {
   arCalibrationInstruction.textContent = `Step ${state.ar.calibrationStep + 1} of ${CALIBRATION_POINTS.length}: place the filtered Sun in the ${point.name}, hold still, then capture.`;
 }
 
-function startSunCalibration() {
+function showCalibrationUnavailable(reason) {
+  arMainControls.hidden = true;
+  arCalibrationSettings.hidden = true;
+  arFilterCheck.hidden = true;
+  arCalibrationPanel.hidden = true;
+  arCalibrationTarget.hidden = true;
+  arCalibrationUnavailableReason.textContent = reason;
+  arCalibrationUnavailable.hidden = false;
+}
+
+function calibrationAvailability() {
   const currentSun = TEST_MODE ? { azimuth: 205, elevation: 30 } : sunPositionAt(new Date());
-  if (currentSun.elevation <= 1) {
-    arStatus.textContent = "The current Sun is too close to or below the horizon for calibration.";
-    return;
+  if (currentSun.elevation <= 1) return { available: false, currentSun, reason: "The Sun is below, or too close to, the horizon. Try again when it is clearly visible." };
+  if (!state.ar.cameraReady) return { available: false, currentSun, reason: "The rear camera is not ready." };
+  if (!state.ar.orientationPermissionGranted || state.ar.rawHeading === null || state.ar.rawPitch === null) {
+    return { available: false, currentSun, reason: "A north-referenced compass heading is not available, so the Sun cannot be used to align this device." };
   }
-  if (!state.ar.cameraReady || !state.ar.orientationPermissionGranted || state.ar.rawHeading === null || state.ar.rawPitch === null) {
-    arStatus.textContent = "Camera and orientation readings are not available yet. Move the phone gently and try again.";
-    return;
+  return { available: true, currentSun };
+}
+
+function startSunCalibration() {
+  const availability = calibrationAvailability();
+  if (!availability.available) {
+    showCalibrationUnavailable(availability.reason);
+    return false;
   }
+  const { currentSun } = availability;
   state.ar.calibrationStep = 0;
   state.ar.calibrationSamples = [];
   arView.classList.add("calibrating");
@@ -1345,8 +1371,10 @@ function startSunCalibration() {
   arCalibrationPanel.hidden = false;
   arCalibrationTarget.hidden = false;
   arMarkers.hidden = true;
-  arStatus.textContent = `Current Sun: ${currentSun.azimuth.toFixed(1)}° bearing, ${currentSun.elevation.toFixed(1)}° elevation.`;
+  arCalibrationUnavailable.hidden = true;
+  setArStatus(`Current Sun: ${currentSun.azimuth.toFixed(1)}° bearing, ${currentSun.elevation.toFixed(1)}° elevation.`, "ready");
   showCalibrationStep();
+  return true;
 }
 
 function cancelSunCalibration(message = "Calibration cancelled.", returnToSettings = true) {
@@ -1358,7 +1386,7 @@ function cancelSunCalibration(message = "Calibration cancelled.", returnToSettin
   arCalibrationPanel.hidden = true;
   arCalibrationTarget.hidden = true;
   arMarkers.hidden = false;
-  arStatus.textContent = message;
+  setArStatus(message, message.toLowerCase().includes("cancel") ? "waiting" : "ready");
 }
 
 function averagedRecentOrientation() {
@@ -1666,6 +1694,11 @@ document.querySelector("#place-search-form").addEventListener("submit", async (e
 arButton.addEventListener("click", openArView);
 document.querySelector("#ar-close").addEventListener("click", closeArView);
 document.querySelector("#ar-open-calibration").addEventListener("click", () => {
+  const availability = calibrationAvailability();
+  if (!availability.available) {
+    showCalibrationUnavailable(availability.reason);
+    return;
+  }
   arMainControls.hidden = true;
   arFilterCheck.hidden = false;
 });
@@ -1680,11 +1713,14 @@ document.querySelector("#ar-calibrate").addEventListener("click", () => {
 document.querySelector("#ar-filter-confirm").addEventListener("click", () => {
   arFilterCheck.hidden = true;
   startSunCalibration();
-  if (state.ar.calibrationStep === null) arCalibrationSettings.hidden = false;
 });
 document.querySelector("#ar-filter-cancel").addEventListener("click", () => {
   arFilterCheck.hidden = true;
   arCalibrationSettings.hidden = false;
+});
+document.querySelector("#ar-calibration-unavailable-close").addEventListener("click", () => {
+  arCalibrationUnavailable.hidden = true;
+  arMainControls.hidden = false;
 });
 document.querySelector("#ar-capture-calibration").addEventListener("click", captureSunCalibration);
 document.querySelector("#ar-cancel-calibration").addEventListener("click", () => cancelSunCalibration());

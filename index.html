@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-location1" />
+    <link rel="stylesheet" href="styles.css?v=20260812-ar2" />
   </head>
   <body>
     <main>
@@ -149,7 +149,7 @@
         </div>
         <div class="ar-controls">
           <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
-          <p id="ar-status">Requesting camera and orientation access…</p>
+          <p id="ar-status" class="ar-status-waiting">Requesting camera and orientation access…</p>
           <div id="ar-main-controls">
             <button id="ar-open-calibration" class="ar-settings-button" type="button">Refine alignment with the Sun <span>requires a visible Sun and a proper solar filter</span></button>
           </div>
@@ -168,6 +168,11 @@
             <button id="ar-filter-confirm" type="button">My camera lenses are securely filtered</button>
             <button id="ar-filter-cancel" class="secondary" type="button">Not now</button>
           </div>
+          <div id="ar-calibration-unavailable" class="ar-calibration-unavailable" hidden>
+            <strong>Sun calibration isn’t available right now</strong>
+            <p id="ar-calibration-unavailable-reason"></p>
+            <button id="ar-calibration-unavailable-close" class="secondary" type="button">Back to camera view</button>
+          </div>
           <div id="ar-calibration-panel" class="ar-calibration-panel" hidden>
             <p id="ar-calibration-instruction"></p>
             <div><button id="ar-capture-calibration" type="button">Capture position</button><button id="ar-cancel-calibration" class="secondary" type="button">Cancel</button></div>
@@ -185,6 +190,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260812-cloudprofile1"></script>
-    <script src="app.js?v=20260812-location1"></script>
+    <script src="app.js?v=20260812-ar2"></script>
   </body>
 </html>

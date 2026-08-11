@@ -150,7 +150,7 @@ try {
   await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
   await page.locator("#ar-button").click();
   if ((await page.locator(".ar-marker small").allTextContents()).some((label) => label.includes("°"))) throw new Error("AR labels should show times without angles");
-  if (await page.locator(".ar-eclipse-icon").count() !== 3) throw new Error("Expected eclipse-phase icons in AR");
+  if (await page.locator("svg.ar-eclipse-icon").count() !== 3 || await page.locator(".ar-eclipse-icon .ar-sun-disc").count() !== 3) throw new Error("Expected rendered SVG eclipse-phase icons in AR");
   await page.screenshot({ path: "test-artifacts/ar.png" });
   await page.locator("#ar-open-calibration").click();
   await page.locator("#ar-filter-check").waitFor({ state: "visible" });
@@ -165,6 +165,11 @@ try {
     await page.locator("#ar-capture-calibration").click();
   }
   await page.locator("#ar-status").filter({ hasText: "Calibration saved" }).waitFor();
+  await page.evaluate(() => showCalibrationUnavailable("The Sun is below, or too close to, the horizon."));
+  await page.locator("#ar-calibration-unavailable").waitFor({ state: "visible" });
+  if (await page.locator("#ar-calibration-settings").isVisible() || await page.locator("#ar-main-controls").isVisible()) throw new Error("Unavailable calibration should have a dedicated state");
+  await page.locator("#ar-calibration-unavailable-close").click();
+  await page.locator("#ar-main-controls").waitFor({ state: "visible" });
 
   await page.locator("#ar-close").click();
   await page.evaluate(() => setObserver({ lat: 44.5, lng: -5.6 }, "Smoke-test alternate place"));
