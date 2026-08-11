@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-mapclose5" />
+    <link rel="stylesheet" href="styles.css?v=20260812-cloudautoload6" />
   </head>
   <body>
     <main>
@@ -109,13 +109,14 @@
           </div>
           <p id="profile-cloud-caption" class="profile-cloud-caption" hidden><strong>Low cloud along the sightline</strong><span>Per-distance mean across ±5°—not cumulative. Lighter is clearer.</span></p>
           <div id="profile-cloud-strip" class="profile-cloud-strip" hidden></div>
-          <p id="profile-cloud-refresh" class="note" hidden>Refresh this saved-place comparison to add a non-cumulative cloud-by-distance strip.</p>
+          <p id="profile-cloud-status" class="status" hidden></p>
+          <button id="load-cloud-profile" class="secondary profile-cloud-load" type="button" hidden>Retry cloud profile</button>
           <div id="terrain-profile" class="terrain-profile" aria-label="Terrain and solar sightline profile"></div>
           <div class="profile-key"><span class="terrain-key">Terrain</span><span class="ray-key">Solar sightline</span><span id="profile-cloud-key" class="cloud-key" hidden>Low cloud</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles</a></div>
         </details>
 
         <details class="technical-details">
-          <summary>Technical details</summary>
+          <summary>Details</summary>
           <div class="readings" aria-live="polite">
             <div><span class="reading-label">Sun bearing</span><strong id="azimuth">—</strong><small id="direction">—</small></div>
             <div><span class="reading-label">Elevation</span><strong id="elevation">—</strong><small>above horizon</small></div>
@@ -194,6 +195,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260812-cloudprofile1"></script>
-    <script src="app.js?v=20260812-mapclose5"></script>
+    <script src="app.js?v=20260812-cloudautoload6"></script>
   </body>
 </html>

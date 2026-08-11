@@ -56,6 +56,7 @@ try {
   if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
   if (await page.locator("#map-close-button svg").count() !== 1) throw new Error("Expected an SVG close control on the map");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
+  if ((await page.locator(".technical-details > summary").textContent()).trim() !== "Details") throw new Error("Expected the simplified Details heading");
   await page.evaluate(() => history.back());
   await page.locator("#location-gate").waitFor({ state: "visible" });
   await page.evaluate(() => history.forward());
@@ -66,6 +67,9 @@ try {
   await page.evaluate(() => history.back());
   await page.locator("#location-gate").waitFor({ state: "hidden" });
   await page.locator("#cloud-result").filter({ hasText: "% low" }).waitFor();
+  await page.locator(".sightline-card summary").click();
+  await page.locator("#profile-cloud-strip").waitFor({ state: "visible" });
+  await page.locator(".sightline-card summary").click();
   await page.locator("#choose-location-button").click();
   await page.locator("#saved-locations-card").waitFor({ state: "visible" });
   await page.screenshot({ path: "test-artifacts/opening.png", fullPage: true });

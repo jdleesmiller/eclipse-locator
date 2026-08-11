@@ -33,7 +33,7 @@ const state = {
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
-  weather: { layer: null, results: null, digest: null, debug: false, indicatorRequest: 0 },
+  weather: { layer: null, results: null, digest: null, debug: false, indicatorRequest: 0, profileRequest: 0, profileLoadingId: null, profileAttemptedId: null, profileError: null },
   ar: {
     active: false,
     stream: null,
@@ -80,7 +80,9 @@ const terrainProfile = document.querySelector("#terrain-profile");
 const profileCloudKey = document.querySelector("#profile-cloud-key");
 const profileCloudCaption = document.querySelector("#profile-cloud-caption");
 const profileCloudStrip = document.querySelector("#profile-cloud-strip");
-const profileCloudRefresh = document.querySelector("#profile-cloud-refresh");
+const profileCloudStatus = document.querySelector("#profile-cloud-status");
+const loadCloudProfileButton = document.querySelector("#load-cloud-profile");
+const sightlineCard = document.querySelector(".sightline-card");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
 const arView = document.querySelector("#ar-view");
@@ -962,6 +964,50 @@ function currentCloudDistanceProfile(maxDistanceKm) {
   return [];
 }
 
+async function loadCurrentCloudProfile() {
+  if (!state.observer || !weatherApplies()) return;
+  const id = locationId(state.observer);
+  const contextId = `${eclipseStorageKey()}:${id}`;
+  if (state.weather.profileLoadingId === contextId) return;
+  if (currentCloudDistanceProfile(state.profileRangeKm).length) {
+    if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
+    return;
+  }
+
+  const request = ++state.weather.profileRequest;
+  state.weather.profileLoadingId = contextId;
+  state.weather.profileAttemptedId = contextId;
+  state.weather.profileError = null;
+  profileCloudStatus.hidden = false;
+  profileCloudStatus.textContent = "Loading cloud percentages along the ±5° corridor…";
+  loadCloudProfileButton.hidden = true;
+  try {
+    const sun = EclipseWeather.solarPosition(state.viewingDate, state.observer.lat, state.observer.lng);
+    const [result] = await EclipseWeather.analyzeCandidates([{
+      id,
+      name: state.locationName,
+      lat: state.observer.lat,
+      lng: state.observer.lng,
+      timezone: state.locationTimezone,
+      azimuthDeg: sun.azimuthDeg,
+      sunElevationDeg: sun.elevationDeg,
+    }], state.viewingDate);
+    if (request !== state.weather.profileRequest || contextId !== `${eclipseStorageKey()}:${locationId(state.observer)}`) return;
+    state.weather.results = [result, ...(state.weather.results || []).filter((candidate) => candidate.id !== id)];
+    state.weather.profileAttemptedId = null;
+    profileCloudStatus.hidden = true;
+    if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
+  } catch (error) {
+    if (request !== state.weather.profileRequest || contextId !== `${eclipseStorageKey()}:${locationId(state.observer)}`) return;
+    state.weather.profileError = error.message;
+    profileCloudStatus.hidden = false;
+    profileCloudStatus.textContent = `Cloud profile unavailable: ${error.message}. The map tiles use a separate service and may still display.`;
+    loadCloudProfileButton.hidden = false;
+  } finally {
+    if (request === state.weather.profileRequest) state.weather.profileLoadingId = null;
+  }
+}
+
 function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const visibleSamples = samples.filter((sample) => sample.distanceKm <= maxDistanceKm);
   const width = 360;
@@ -980,12 +1026,15 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const rayPoints = visibleSamples.map((sample) => `${x(sample.distanceKm).toFixed(1)},${y(sample.rayAltitudeM).toFixed(1)}`).join(" ");
   const grid = [minValue, minValue + range / 2, maxValue].map((value) => `<line x1="${pad.left}" y1="${y(value)}" x2="${width - pad.right}" y2="${y(value)}" stroke="rgba(255,255,255,.09)"/><text x="${pad.left - 4}" y="${y(value) + 3}" fill="#9cabb9" font-size="8" text-anchor="end">${Math.round(value)}m</text>`).join("");
   const cloudProfile = currentCloudDistanceProfile(maxDistanceKm);
-  const digestCandidate = state.observer && loadPreviousWeatherDigest()?.candidates?.find((candidate) => candidate.id === locationId(state.observer));
-  const legacyCloudSummary = !cloudProfile.length && digestCandidate?.weather?.target && !digestCandidate.lowCloudDistanceProfile?.length;
+  const currentId = state.observer && locationId(state.observer);
+  const currentProfileContext = currentId && `${eclipseStorageKey()}:${currentId}`;
+  const canLoadCloudProfile = !cloudProfile.length && weatherApplies();
   profileCloudKey.hidden = cloudProfile.length === 0;
   profileCloudCaption.hidden = cloudProfile.length === 0;
   profileCloudStrip.hidden = cloudProfile.length === 0;
-  profileCloudRefresh.hidden = !legacyCloudSummary;
+  profileCloudStatus.hidden = !canLoadCloudProfile || (!state.weather.profileLoadingId && !state.weather.profileError);
+  if (state.weather.profileLoadingId === currentProfileContext) profileCloudStatus.textContent = "Loading cloud percentages along the ±5° corridor…";
+  loadCloudProfileButton.hidden = !canLoadCloudProfile || !state.weather.profileError;
   const cloudProfileEndKm = cloudProfile.length ? Math.max(...cloudProfile.map((sample) => sample.distanceKm)) : 0;
   if (cloudProfile.length) profileCloudCaption.querySelector("span").textContent = `Per-distance mean across ±5°—not cumulative. Sampled to ${cloudProfileEndKm} km; lighter is clearer.`;
   const cloudStrip = cloudProfile.map((sample, index) => {
@@ -1002,6 +1051,9 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   profileCloudStrip.innerHTML = cloudProfile.length
     ? `<svg viewBox="0 0 ${width} 18" role="img" aria-label="Non-cumulative low-cloud percentage by distance"><text x="${pad.left - 4}" y="12" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>${cloudStrip}${unsampledCloud}</svg>`
     : "";
+  if (canLoadCloudProfile && sightlineCard.open && state.weather.profileLoadingId !== currentProfileContext && state.weather.profileAttemptedId !== currentProfileContext) {
+    queueMicrotask(loadCurrentCloudProfile);
+  }
 
   terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres${cloudProfile.length ? ", with mean low-cloud percentage across the sampled wedge" : ""}">
     ${grid}
@@ -1479,6 +1531,7 @@ function renderSightline() {
 
   const origin = [state.observer.lat, state.observer.lng];
   const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
+  const arrowUnderlayTip = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM + 0.7);
   const arrowBase = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM - 4);
   const left = destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, MAX_DISTANCE_KM);
   const right = destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, MAX_DISTANCE_KM);
@@ -1487,7 +1540,7 @@ function renderSightline() {
   L.polyline([origin, arrowBase], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
   const arrowUnderlayLeft = destinationPoint(state.observer, state.azimuth - 0.9, MAX_DISTANCE_KM - 4.6);
   const arrowUnderlayRight = destinationPoint(state.observer, state.azimuth + 0.9, MAX_DISTANCE_KM - 4.6);
-  L.polygon([end, arrowUnderlayLeft, arrowUnderlayRight], { stroke: false, fillColor: "#fff", fillOpacity: 0.9, interactive: false }).addTo(sightlineLayer);
+  L.polygon([arrowUnderlayTip, arrowUnderlayLeft, arrowUnderlayRight], { stroke: false, fillColor: "#fff", fillOpacity: 0.9, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, arrowBase], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
   const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, MAX_DISTANCE_KM - 4);
   const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, MAX_DISTANCE_KM - 4);
@@ -1763,6 +1816,16 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
     document.querySelectorAll(".profile-ranges button").forEach((candidate) => candidate.classList.toggle("active", candidate === button));
     if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
   });
+});
+sightlineCard.addEventListener("toggle", () => {
+  if (!sightlineCard.open) return;
+  if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
+  else loadCurrentCloudProfile();
+});
+loadCloudProfileButton.addEventListener("click", () => {
+  state.weather.profileAttemptedId = null;
+  state.weather.profileError = null;
+  loadCurrentCloudProfile();
 });
 prepareLocationGate();
 renderSavedLocations();
