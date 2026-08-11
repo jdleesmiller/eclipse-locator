@@ -32,7 +32,7 @@ const state = {
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
-  weather: { layer: null, results: null, digest: null, digestFormat: "markdown", debug: false },
+  weather: { layer: null, results: null, digest: null, digestFormat: "markdown", debug: false, indicatorRequest: 0 },
   ar: {
     active: false,
     stream: null,
@@ -72,8 +72,6 @@ let lastLocationChoice = null;
 const azimuthOutput = document.querySelector("#azimuth");
 const elevationOutput = document.querySelector("#elevation");
 const directionOutput = document.querySelector("#direction");
-const heightTable = document.querySelector("#height-table");
-const heightNote = document.querySelector("#height-note");
 const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
 const terrainResult = document.querySelector("#terrain-result");
@@ -94,6 +92,7 @@ const arCalibrationSelect = document.querySelector("#ar-calibration-select");
 const arFilterCheck = document.querySelector("#ar-filter-check");
 const eclipseExplorer = document.querySelector("#eclipse-explorer");
 const locationGate = document.querySelector("#location-gate");
+const panel = document.querySelector(".panel");
 const gateStatus = document.querySelector("#gate-status");
 const placeResults = document.querySelector("#place-results");
 const lastLocationButton = document.querySelector("#last-location");
@@ -101,6 +100,7 @@ const eventKindOutput = document.querySelector("#event-kind");
 const eventSummaryOutput = document.querySelector("#event-summary");
 const eventDateOutput = document.querySelector("#event-date");
 const eventObscurationOutput = document.querySelector("#event-obscuration");
+const eventObscurationFact = document.querySelector("#event-obscuration-fact");
 const eventEyebrow = document.querySelector("#event-eyebrow");
 const eventTitle = document.querySelector("#event-title");
 const arOffscreenLabel = arOffscreenArrow.querySelector("b");
@@ -110,6 +110,7 @@ const weatherTimeSelect = document.querySelector("#weather-time");
 const weatherLayerNote = document.querySelector("#weather-layer-note");
 const weatherMapStatus = document.querySelector("#weather-map-status");
 const weatherLegend = document.querySelector("#weather-legend");
+const cloudResult = document.querySelector("#cloud-result");
 const weatherStatus = document.querySelector("#weather-status");
 const weatherResults = document.querySelector("#weather-results");
 const weatherDigest = document.querySelector("#weather-digest");
@@ -117,6 +118,8 @@ const weatherDigestText = document.querySelector("#weather-digest-text");
 const weatherDebugToggle = document.querySelector("#weather-debug");
 const savedLocationList = document.querySelector("#saved-location-list");
 const savedLocationCount = document.querySelector("#saved-location-count");
+const savedLocationsCard = document.querySelector("#saved-locations-card");
+const savedComparison = document.querySelector("#saved-comparison");
 const shareStatus = document.querySelector("#share-status");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
@@ -181,12 +184,16 @@ function savedLocationsForCurrentEclipse() {
   return Array.isArray(locations) ? locations : [];
 }
 
-function storeSavedLocationsForCurrentEclipse(locations) {
-  const key = eclipseStorageKey();
+function storeSavedLocationGroup(key, locations) {
   if (!key) return;
   const groups = loadSavedLocationGroups();
-  groups[key] = locations.slice(0, 30);
+  if (locations.length) groups[key] = locations.slice(0, 30);
+  else delete groups[key];
   try { localStorage.setItem(SAVED_LOCATIONS_STORAGE_KEY, JSON.stringify(groups)); } catch { /* optional local feature */ }
+}
+
+function storeSavedLocationsForCurrentEclipse(locations) {
+  storeSavedLocationGroup(eclipseStorageKey(), locations);
 }
 
 function savedCurrentLocation() {
@@ -272,6 +279,7 @@ function rememberCurrentLocation(seedNote) {
     lat: state.observer.lat,
     lng: state.observer.lng,
     timezone: state.locationTimezone,
+    eclipsePeak: eventDate(state.eclipse.peak).toISOString(),
     notes: seedNote !== undefined ? seedNote : existing?.notes || "",
     updatedAt: new Date().toISOString(),
   };
@@ -286,53 +294,117 @@ function rememberCurrentLocation(seedNote) {
   updateUrlState();
 }
 
+function inferredEclipsePeak(groupKey, location) {
+  return location.eclipsePeak || `${groupKey}T12:00:00.000Z`;
+}
+
+function compareSavedGroup(groupKey, locations) {
+  const first = locations[0];
+  if (!first) return;
+  activateLocation(first, { eclipsePeak: inferredEclipsePeak(groupKey, first), keepGate: true });
+  if (!weatherApplies()) {
+    savedComparison.hidden = false;
+    weatherStatus.textContent = "Cloud comparison is available only for locations in the current AEMET forecast area and short forecast window.";
+    return;
+  }
+  savedComparison.hidden = false;
+  analyzeWeather();
+}
+
 function renderSavedLocations() {
-  if (!state.eclipse) return;
-  const locations = savedLocationsForCurrentEclipse();
-  savedLocationCount.textContent = `${locations.length} saved`;
+  const groups = loadSavedLocationGroups();
+  const entries = Object.entries(groups)
+    .filter(([, locations]) => Array.isArray(locations) && locations.length)
+    .sort(([a], [b]) => a.localeCompare(b));
+  const total = entries.reduce((sum, [, locations]) => sum + locations.length, 0);
+  savedLocationsCard.hidden = total === 0;
+  lastLocationButton.hidden = total > 0 || !lastLocationChoice;
+  savedLocationCount.textContent = `${total} place${total === 1 ? "" : "s"}`;
   savedLocationList.replaceChildren();
-  for (const location of locations) {
-    const item = document.createElement("article");
-    item.className = "saved-location";
-    const header = document.createElement("div");
-    header.className = "saved-location-header";
-    const name = document.createElement("strong");
-    name.textContent = location.name;
-    const viewButton = document.createElement("button");
-    viewButton.type = "button";
-    viewButton.className = "secondary";
-    viewButton.textContent = "View";
-    viewButton.addEventListener("click", () => activateLocation(location, { eclipsePeak: eventDate(state.eclipse.peak).toISOString() }));
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "secondary";
-    removeButton.textContent = "Remove";
-    removeButton.addEventListener("click", () => {
-      storeSavedLocationsForCurrentEclipse(locations.filter((candidate) => candidate.id !== location.id));
-      renderSavedLocations();
-      if (location.id === locationId(state.observer)) updateUrlState();
-      state.weather.results = null;
-      weatherResults.replaceChildren();
-      weatherDigest.hidden = true;
-    });
-    header.append(name, viewButton, removeButton);
-    const notes = document.createElement("textarea");
-    notes.placeholder = "Notes about access, transport, facilities…";
-    notes.setAttribute("aria-label", `Notes for ${location.name}`);
-    notes.value = location.notes || "";
-    notes.addEventListener("change", () => {
-      const latest = savedLocationsForCurrentEclipse();
-      const match = latest.find((candidate) => candidate.id === location.id);
-      if (!match) return;
-      match.notes = notes.value.trim();
-      match.updatedAt = new Date().toISOString();
-      storeSavedLocationsForCurrentEclipse(latest);
-      if (location.id === locationId(state.observer)) updateUrlState();
-    });
-    const coordinates = document.createElement("small");
-    coordinates.textContent = `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
-    item.append(header, notes, coordinates);
-    savedLocationList.append(item);
+  for (const [groupKey, locations] of entries) {
+    const group = document.createElement("section");
+    group.className = "saved-eclipse-group";
+    const groupHeading = document.createElement("div");
+    groupHeading.className = "saved-eclipse-heading";
+    const groupTitle = document.createElement("strong");
+    groupTitle.textContent = new Date(`${groupKey}T12:00:00Z`).toLocaleDateString([], { dateStyle: "long" });
+    const compareButton = document.createElement("button");
+    compareButton.type = "button";
+    compareButton.className = "secondary";
+    compareButton.textContent = "Compare forecast";
+    compareButton.addEventListener("click", () => compareSavedGroup(groupKey, locations));
+    groupHeading.append(groupTitle, compareButton);
+    group.append(groupHeading);
+
+    for (const location of locations) {
+      const item = document.createElement("article");
+      item.className = "saved-location";
+      const header = document.createElement("div");
+      header.className = "saved-location-header";
+      const name = document.createElement("input");
+      name.className = "saved-location-name";
+      name.value = location.name;
+      name.setAttribute("aria-label", "Viewing location name");
+      name.addEventListener("change", () => {
+        const latest = loadSavedLocationGroups()[groupKey] || [];
+        const match = latest.find((candidate) => candidate.id === location.id);
+        if (!match) return;
+        match.name = name.value.trim() || `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
+        name.value = match.name;
+        location.name = match.name;
+        match.updatedAt = new Date().toISOString();
+        storeSavedLocationGroup(groupKey, latest);
+        if (groupKey === eclipseStorageKey() && state.observer && location.id === locationId(state.observer)) {
+          state.locationName = match.name;
+          eventTitle.textContent = match.name;
+          eventSummaryOutput.textContent = match.name;
+          updateUrlState();
+        }
+      });
+      const viewButton = document.createElement("button");
+      viewButton.type = "button";
+      viewButton.className = "secondary";
+      viewButton.textContent = "View";
+      viewButton.addEventListener("click", () => activateLocation(location, { eclipsePeak: inferredEclipsePeak(groupKey, location) }));
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "secondary";
+      removeButton.textContent = "Remove";
+      removeButton.addEventListener("click", () => {
+        storeSavedLocationGroup(groupKey, locations.filter((candidate) => candidate.id !== location.id));
+        renderSavedLocations();
+        if (groupKey === eclipseStorageKey() && state.observer && location.id === locationId(state.observer)) updateUrlState();
+        state.weather.results = null;
+        weatherResults.replaceChildren();
+        weatherDigest.hidden = true;
+      });
+      header.append(name, viewButton, removeButton);
+      const notesDetails = document.createElement("details");
+      notesDetails.className = "saved-location-notes";
+      const notesSummary = document.createElement("summary");
+      notesSummary.textContent = location.notes ? "Edit notes" : "Add notes";
+      const notes = document.createElement("textarea");
+      notes.placeholder = "Access, transport, facilities…";
+      notes.setAttribute("aria-label", `Notes for ${location.name}`);
+      notes.value = location.notes || "";
+      notes.addEventListener("change", () => {
+        const latest = loadSavedLocationGroups()[groupKey] || [];
+        const match = latest.find((candidate) => candidate.id === location.id);
+        if (!match) return;
+        match.notes = notes.value.trim();
+        location.notes = match.notes;
+        match.updatedAt = new Date().toISOString();
+        storeSavedLocationGroup(groupKey, latest);
+        notesSummary.textContent = match.notes ? "Edit notes" : "Add notes";
+        if (groupKey === eclipseStorageKey() && state.observer && location.id === locationId(state.observer)) updateUrlState();
+      });
+      notesDetails.append(notesSummary, notes);
+      const coordinates = document.createElement("small");
+      coordinates.textContent = `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
+      item.append(header, notesDetails, coordinates);
+      group.append(item);
+    }
+    savedLocationList.append(group);
   }
 }
 
@@ -374,6 +446,8 @@ function selectEclipse(eclipse, fit = true) {
   eventKindOutput.textContent = kindLabel;
   eventDateOutput.textContent = formatLocationTime(peakDate, true);
   eventObscurationOutput.textContent = `${Math.round(eclipse.obscuration * 100)}%`;
+  eventObscurationFact.hidden = kind === "total";
+  eventObscurationFact.parentElement.classList.toggle("total", kind === "total");
   eventSummaryOutput.textContent = state.locationName;
   eventEyebrow.textContent = "ECLIPSE LOCATOR";
   eventTitle.textContent = state.locationName;
@@ -448,9 +522,36 @@ function updateWeatherOverlay() {
   }
 }
 
+async function updateCloudIndicator() {
+  const request = ++state.weather.indicatorRequest;
+  cloudResult.className = "result-badge";
+  cloudResult.textContent = "Checking…";
+  const times = EclipseWeather.forecastWindow(state.viewingDate);
+  const point = [{ lat: state.observer.lat, lng: state.observer.lng }];
+  try {
+    const [before, after] = await Promise.all([
+      EclipseWeather.pointValues(["low"], point, times.before),
+      EclipseWeather.pointValues(["low"], point, times.after),
+    ]);
+    if (request !== state.weather.indicatorRequest) return;
+    const lowCloudPct = Math.round(before.low[0] + (after.low[0] - before.low[0]) * times.fractionAfter);
+    const classification = lowCloudPct <= 25 ? "clear" : lowCloudPct <= 60 ? "concerning" : "blocked";
+    const label = classification === "clear" ? "OK" : classification === "concerning" ? "Mixed" : "Cloudy";
+    cloudResult.className = `result-badge ${classification}`;
+    cloudResult.textContent = `${label} · ${lowCloudPct}% low`;
+  } catch {
+    if (request !== state.weather.indicatorRequest) return;
+    cloudResult.className = "result-badge";
+    cloudResult.textContent = "Unavailable";
+  }
+}
+
 function refreshWeatherAvailability() {
   weatherCard.hidden = !weatherApplies();
-  if (weatherApplies()) updateWeatherOverlay();
+  if (weatherApplies()) {
+    updateWeatherOverlay();
+    updateCloudIndicator();
+  }
   else if (weatherLayer && map) {
     map.removeLayer(weatherLayer);
     weatherLayer = null;
@@ -629,7 +730,7 @@ function findAndSelectRequestedEclipse(peakValue, fit = true) {
   }
 }
 
-function activateLocation(location, { eclipsePeak, seedNote } = {}) {
+function activateLocation(location, { eclipsePeak, seedNote, keepGate = false } = {}) {
   const currentPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: Number(location.lat), lng: Number(location.lng) };
   state.locationName = location.name || `${state.observer.lat.toFixed(4)}, ${state.observer.lng.toFixed(4)}`;
@@ -641,8 +742,9 @@ function activateLocation(location, { eclipsePeak, seedNote } = {}) {
   initializeMap();
   observerMarker.setLatLng(state.observer);
   map.setView(state.observer, 9);
-  locationGate.hidden = true;
-  statusOutput.textContent = `Observer: ${state.locationName} (${state.observer.lat.toFixed(5)}, ${state.observer.lng.toFixed(5)})`;
+  locationGate.hidden = !keepGate;
+  if (!keepGate) panel.scrollTop = 0;
+  statusOutput.textContent = "";
   const requestedPeak = eclipsePeak || location.eclipsePeak || currentPeak;
   if (requestedPeak) findAndSelectRequestedEclipse(requestedPeak);
   else findAndSelectEclipse();
@@ -708,16 +810,6 @@ function terrainSampleDistances() {
   const farCount = TERRAIN_SAMPLE_COUNT - nearCount;
   const far = Array.from({ length: farCount }, (_, index) => 5 + (MAX_DISTANCE_KM - 5) * (index + 1) / farCount);
   return [...near, ...far];
-}
-
-// Coarse distance readouts; the terrain profile uses a separate, denser sample set.
-function buildSightlineSamples() {
-  return DISTANCES_KM.map((distanceKm) => ({
-    distanceKm,
-    location: destinationPoint(state.observer, state.azimuth, distanceKm),
-    lineOfSightHeightKm: lineOfSightHeightKm(distanceKm),
-    terrainElevationM: null,
-  }));
 }
 
 function rayAltitudeM(distanceKm, observerElevationM) {
@@ -788,14 +880,18 @@ async function loadTerrain() {
     if (blocked.length) {
       const first = blocked[0];
       terrainResult.className = "blocked";
-      terrainResult.textContent = "Potentially blocked";
+      terrainResult.textContent = "Obstructed";
       terrainNote.textContent = `First sampled obstruction at ${first.distanceKm.toFixed(1)} km; terrain is ${Math.round(-first.clearanceM)} m above the solar ray. Minimum clearance: ${Math.round(worst.clearanceM)} m.`;
       for (const sample of blocked) {
         L.circleMarker(sample.location, { radius: 3, color: "#fff", weight: 1, fillColor: "#e64f43", fillOpacity: 0.9, interactive: false }).addTo(terrainLayer);
       }
+    } else if (worst.clearanceM < 50) {
+      terrainResult.className = "concerning";
+      terrainResult.textContent = "Concerning";
+      terrainNote.textContent = `The smallest sampled clearance is only ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
     } else {
       terrainResult.className = "clear";
-      terrainResult.textContent = "Sampled terrain clears";
+      terrainResult.textContent = "OK";
       terrainNote.textContent = `Minimum sampled clearance is ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
     }
   } catch (error) {
@@ -1200,16 +1296,6 @@ function updateCalculations({ fit = false } = {}) {
   elevationOutput.textContent = `${state.elevation.toFixed(1)}°`;
   directionOutput.textContent = compassPoint(state.azimuth);
 
-  const samples = buildSightlineSamples();
-  heightTable.innerHTML = samples.map((sample) => {
-    const height = sample.lineOfSightHeightKm;
-    const display = height >= 0 ? (height < 1 ? `${Math.round(height * 1000)} m` : `${height.toFixed(1)} km`) : "below horizon";
-    return `<div class="height-item"><b>${display}</b><span>${sample.distanceKm} km away</span></div>`;
-  }).join("");
-  heightNote.textContent = state.elevation > 0
-    ? "Height above the observer's local level; use the terrain profile below for ground clearance."
-    : "The Sun is below the geometric horizon at this selected time.";
-
   observerMarker.setLatLng(state.observer);
   renderSightline();
   loadTerrain();
@@ -1227,7 +1313,7 @@ function setObserver(latlng, message, fit = false) {
   const selectedPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: latlng.lat, lng: latlng.lng };
   state.locationName = `Custom location ${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-  statusOutput.textContent = `${message} ${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;
+  statusOutput.textContent = "";
   if (selectedPeak) findAndSelectRequestedEclipse(selectedPeak, fit);
   else findAndSelectEclipse({ fit });
 }
@@ -1462,6 +1548,7 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
 });
 refreshCalibrationSelect();
 prepareLocationGate();
+renderSavedLocations();
 const sharedLocation = sharedLocationFromUrl();
 if (sharedLocation) activateLocation(sharedLocation, { eclipsePeak: sharedLocation.eclipsePeak, seedNote: sharedLocation.notes });
 else if (TEST_MODE) activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });

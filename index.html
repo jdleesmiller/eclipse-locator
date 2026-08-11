@@ -10,16 +10,16 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260811-general1" />
+    <link rel="stylesheet" href="styles.css?v=20260811-design2" />
   </head>
   <body>
     <main>
       <section id="location-gate" class="location-gate" aria-labelledby="gate-title">
         <div class="gate-card">
           <p class="eyebrow">ECLIPSE LOCATOR</p>
-          <h1 id="gate-title">Find your next solar eclipse.</h1>
-          <p>Choose where you will be to see the next eclipse visible there, then check its direction and horizon.</p>
-          <button id="gate-locate" type="button">Use my location</button>
+          <h1 id="gate-title">Find the best place to see your next solar eclipse</h1>
+          <p>This app helps you find a place where you’ll be able to see the Sun—using eclipse glasses—at the right time, while avoiding cloud and terrain obstructions.</p>
+          <button id="gate-locate" type="button">Start with my location</button>
           <div class="gate-divider"><span>or search for a place</span></div>
           <form id="place-search-form">
             <input id="place-search" type="search" autocomplete="off" placeholder="City or place name" aria-label="City or place name" />
@@ -27,8 +27,25 @@
           </form>
           <div id="place-results" class="place-results" aria-live="polite"></div>
           <button id="last-location" class="secondary" type="button" hidden></button>
-          <p id="gate-status" class="gate-status">The map loads after a location is selected.</p>
-          <p class="gate-attribution">Place search by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.</p>
+          <p id="gate-status" class="gate-status" aria-live="polite"></p>
+          <p class="gate-attribution">Place search powered by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.</p>
+
+          <section id="saved-locations-card" class="saved-locations-card" hidden aria-labelledby="saved-locations-title">
+            <div class="section-heading"><h2 id="saved-locations-title">Saved eclipse plans</h2><span id="saved-location-count"></span></div>
+            <p class="note">Saved only in this browser. Choose a place to inspect it, or compare places saved for the same eclipse.</p>
+            <div id="saved-location-list" class="saved-location-list"></div>
+            <div id="saved-comparison" class="saved-comparison" hidden>
+              <button id="analyze-weather" type="button">Refresh comparison</button>
+              <p id="weather-status" class="status"></p>
+              <label class="weather-debug-toggle"><input id="weather-debug" type="checkbox" /> Include developer samples and angles</label>
+              <div id="weather-results" class="weather-results"></div>
+              <details id="weather-digest" class="weather-digest" hidden>
+                <summary>Comparison digest</summary>
+                <div class="digest-actions"><button id="copy-weather-digest" type="button">Copy Markdown</button><button id="show-json-digest" class="secondary" type="button">Show JSON</button></div>
+                <textarea id="weather-digest-text" readonly aria-label="Weather digest"></textarea>
+              </details>
+            </div>
+          </section>
         </div>
       </section>
       <div id="map" aria-label="Map showing the eclipse sightline"></div>
@@ -39,6 +56,7 @@
           <h1 id="event-title">Eclipse sightline</h1>
         </div>
         <div class="top-actions">
+          <button id="share-button" class="icon-button" type="button" aria-label="Share this view" title="Share this view"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0-12L7.5 7.5M12 3l4.5 4.5M6 11H4.8A1.8 1.8 0 0 0 3 12.8v6.4A1.8 1.8 0 0 0 4.8 21h14.4a1.8 1.8 0 0 0 1.8-1.8v-6.4a1.8 1.8 0 0 0-1.8-1.8H18"/></svg></button>
           <button id="locate-button" class="icon-button" type="button" aria-label="Use my location" title="Use my location"><span aria-hidden="true">⌖</span></button>
         </div>
       </header>
@@ -49,35 +67,28 @@
           <strong id="event-kind">Finding eclipse…</strong>
           <div class="event-facts">
             <div><span>When</span><b id="event-date">—</b></div>
-            <div><span>Obscuration</span><b id="event-obscuration">—</b></div>
+            <div id="event-obscuration-fact"><span>Sun covered at maximum</span><b id="event-obscuration">—</b></div>
           </div>
           <span id="event-summary"></span>
         </div>
 
-        <button id="ar-button" class="ar-primary" type="button"><span aria-hidden="true">◉</span> Preview direction in AR</button>
+        <button id="ar-button" class="ar-primary" type="button"><span aria-hidden="true">◉</span> Show eclipse position on my camera</button>
+        <p class="safety-note"><strong>Solar safety:</strong> never look directly at the Sun without certified eclipse glasses. Cover the camera lenses with a suitable solar filter before pointing them at the Sun.</p>
 
         <section id="weather-card" class="weather-card" hidden>
-          <div class="section-heading"><h2>Cloud forecast</h2><span>AEMET HARMONIE-AROME</span></div>
-          <div class="weather-controls">
-            <label for="weather-layer">Map layer<select id="weather-layer"><option value="none">None</option><option value="low" selected>Low cloud</option><option value="total">Total cloud</option><option value="high">High cloud</option><option value="base">Cloud base</option></select></label>
-            <label for="weather-time">Valid time<select id="weather-time"><option value="2026-08-12T17:00:00.000Z">17:00 UTC · 19:00 CEST</option><option value="2026-08-12T18:00:00.000Z" selected>18:00 UTC · 20:00 CEST</option><option value="2026-08-12T19:00:00.000Z">19:00 UTC · 21:00 CEST</option><option value="2026-08-12T20:00:00.000Z">20:00 UTC · 22:00 CEST</option><option value="2026-08-12T21:00:00.000Z">21:00 UTC · 23:00 CEST</option></select></label>
-          </div>
-          <p id="weather-layer-note" class="note">Low-cloud percentage; bases below approximately 8,200 ft. Valid 18:00 UTC, 27 minutes before totality.</p>
+          <div class="section-heading"><h2>Cloud forecast</h2><span id="cloud-result" class="result-badge">Checking…</span></div>
+          <p class="section-explainer">Cloud can hide the Sun along the orange corridor. Lower percentages mean a clearer view.</p>
+          <p id="weather-layer-note" class="note">Loading forecast details…</p>
           <p id="weather-map-status" class="weather-map-status" aria-live="polite"></p>
           <div id="weather-legend" class="weather-legend" role="img" aria-label="Approximate forecast colour scale">
             <div class="weather-legend-gradient"></div>
             <div class="weather-legend-labels"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
           </div>
-          <button id="analyze-weather" type="button">Compare saved locations</button>
-          <p id="weather-status" class="status">Save viewing locations below, then compare their near-term cloud and terrain outlook.</p>
-          <label class="weather-debug-toggle"><input id="weather-debug" type="checkbox" /> Include developer samples and angles</label>
-          <div id="weather-results" class="weather-results"></div>
-          <details id="weather-digest" class="weather-digest" hidden>
-            <summary>Weather digest</summary>
-            <div class="digest-actions"><button id="copy-weather-digest" type="button">Copy Markdown</button><button id="show-json-digest" class="secondary" type="button">Show JSON</button></div>
-            <textarea id="weather-digest-text" readonly aria-label="Weather digest"></textarea>
-          </details>
-          <p class="weather-source"><a href="https://ama.aemet.es/visor-de-variables" target="_blank" rel="noreferrer">AEMET aviation variable viewer</a> · terrain: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles / EU-DEM</a> · run initialization is not exposed.</p>
+          <div class="weather-controls">
+            <label for="weather-layer">Map layer<select id="weather-layer"><option value="none">None</option><option value="low" selected>Low cloud</option><option value="total">Total cloud</option><option value="high">High cloud</option><option value="base">Cloud base</option></select></label>
+            <label for="weather-time">Valid time<select id="weather-time"><option value="2026-08-12T17:00:00.000Z">17:00 UTC · 19:00 CEST</option><option value="2026-08-12T18:00:00.000Z" selected>18:00 UTC · 20:00 CEST</option><option value="2026-08-12T19:00:00.000Z">19:00 UTC · 21:00 CEST</option><option value="2026-08-12T20:00:00.000Z">20:00 UTC · 22:00 CEST</option><option value="2026-08-12T21:00:00.000Z">21:00 UTC · 23:00 CEST</option></select></label>
+          </div>
+          <p class="weather-source">Forecast: <a href="https://ama.aemet.es/visor-de-variables" target="_blank" rel="noreferrer">AEMET aviation variable viewer</a>.</p>
         </section>
 
         <div class="terrain-card">
@@ -104,25 +115,14 @@
             <div><span class="reading-label">Sun bearing</span><strong id="azimuth">—</strong><small id="direction">—</small></div>
             <div><span class="reading-label">Elevation</span><strong id="elevation">—</strong><small>above horizon</small></div>
           </div>
-          <div class="section-heading"><h2>Solar line height</h2><span>flat-earth estimate</span></div>
-          <div id="height-table" class="height-grid"></div>
-          <p id="height-note" class="note"></p>
         </details>
 
-        <section class="saved-locations-card" aria-labelledby="saved-locations-title">
-          <div class="section-heading"><h2 id="saved-locations-title">Saved viewing locations</h2><span id="saved-location-count">0 saved</span></div>
-          <p class="note">Stored only in this browser for the selected eclipse. Opening a shared location also adds it here.</p>
-          <div id="saved-location-list" class="saved-location-list"></div>
-        </section>
-
-        <p id="status" class="status">Finding your location…</p>
-        <p class="hint">Tap the map or drag the marker to try another viewing point.</p>
-        <p class="safety-note"><strong>Solar safety:</strong> never look directly at the Sun without certified solar viewing protection.</p>
+        <p id="status" class="status" aria-live="polite"></p>
         <div class="panel-actions">
-          <button id="explore-eclipses" class="secondary" type="button">Choose another eclipse</button>
-          <button id="choose-location-button" class="secondary" type="button">Choose another location</button>
-          <button id="share-button" class="secondary share-button" type="button">Share this view</button>
+          <button id="explore-eclipses" class="secondary" type="button">Choose a different eclipse</button>
+          <button id="choose-location-button" class="secondary" type="button">Choose a different location</button>
         </div>
+        <p class="hint">Or tap the map or drag the marker to select another viewing point.</p>
         <p id="share-status" class="share-status" aria-live="polite"></p>
       </section>
 
@@ -189,6 +189,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260811-general2"></script>
-    <script src="app.js?v=20260811-general5"></script>
+    <script src="app.js?v=20260811-design2"></script>
   </body>
 </html>

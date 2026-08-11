@@ -2,7 +2,7 @@
 
 A small, mobile-first map for finding the next solar eclipse visible from a chosen location and exploring the Sun's sightline. The static frontend uses Leaflet, OpenStreetMap, SunCalc, Astronomy Engine and Open-Meteo services with no frontend build step or API keys.
 
-When a selected eclipse is within the short forecast horizon and the observer is in Spain, the app also provides AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays. Saved viewing locations for that eclipse can be compared on demand using cloud wedges and terrain horizons. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
+When a selected eclipse is within the short forecast horizon and the observer is in Spain, the app also provides AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays. The opening planning screen keeps locally saved places grouped by eclipse, with editable names and notes; eligible groups can be compared on demand using cloud wedges and terrain horizons. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
 
 The current location, time zone and selected eclipse are stored in the URL, so **Share this view** can send a restorable link. Locations that are opened, searched or selected on the map are also saved locally under that eclipse. Each saved location has an optional local-only notes field; neither the shortlist nor its notes are uploaded by the static app.
 
@@ -20,7 +20,7 @@ Cloud overlays require access to `https://ama.aemet.es`. Live numeric site compa
 
 For a desktop interaction harness, open <http://localhost:8080/?test=1>. Test mode selects a fixed Gijón location and simulates camera/orientation readiness plus consistent calibration readings. It is useful for checking the AR panels and five-step calibration wizard, but does not test real camera, compass or iOS permission behaviour.
 
-With the local server running, the automated mobile-sized smoke test can be run with `npm run test:ui`. It uses the installed Google Chrome, reports browser console errors, checks Astronomy Engine against both SunCalc and the supplied IMCCE altitudes, exercises the weather digest and filtered-Sun calibration flow, and writes screenshots to `test-artifacts/`.
+The automated mobile-sized smoke test is self-contained: `npm run test:ui` starts its own temporary local server, uses the installed Google Chrome, reports browser console errors, checks Astronomy Engine against both SunCalc and the supplied IMCCE altitudes, exercises the planning, weather-digest and filtered-Sun calibration flows, writes screenshots to `test-artifacts/`, and then stops the server.
 
 To view it on an iPhone on the same Wi-Fi network, find the computer's local IP address and open `http://COMPUTER-IP:8080` on the phone. The map and manual observer placement work this way, but browser geolocation generally requires HTTPS (except on `localhost`). For reliable phone geolocation, deploy to an HTTPS host such as GitHub Pages or serve locally with a trusted HTTPS certificate.
 
@@ -29,7 +29,7 @@ To view it on an iPhone on the same Wi-Fi network, find the computer's local IP 
 - Geolocation requires user permission and, on normal hostnames/IP addresses, a secure HTTPS context. If it fails, search for a place using the key-free Open-Meteo geocoding service. The map does not load until a location is chosen.
 - The next eclipse whose maximum occurs above the local horizon is calculated in the browser. **Choose another eclipse** lists upcoming local events and future total or annular events visible from the selected point.
 - Calculated event summaries use the chosen location's time zone when it is available from place search. The sightline time is fixed at the selected eclipse's maximum.
-- The optional AR camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping **Preview direction in AR**. Compass readings can drift and the browser does not report the camera's exact field of view, so use the optional filtered-Sun calibration rather than treating marker placement as survey-grade.
+- The optional camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping **Show eclipse position on my camera**. Compass readings can drift and the browser does not report the camera's exact field of view, so use the optional filtered-Sun calibration rather than treating marker placement as survey-grade.
 - Never look directly at the uneclipsed or partially eclipsed Sun without suitable solar viewing protection. Use an appropriate solar filter over the camera lens during partial phases; the phone screen is not eye protection.
 
 ## Hosting

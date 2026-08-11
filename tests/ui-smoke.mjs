@@ -1,4 +1,30 @@
 import { chromium } from "playwright-core";
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
+const contentTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
+const server = createServer(async (request, response) => {
+  const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+  const filePath = resolve(root, pathname === "/" ? "index.html" : `.${pathname}`);
+  if (!filePath.startsWith(`${root}/`) && filePath !== resolve(root, "index.html")) {
+    response.writeHead(403).end("Forbidden");
+    return;
+  }
+  try {
+    const body = await readFile(filePath);
+    response.writeHead(200, { "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream" });
+    response.end(body);
+  } catch {
+    response.writeHead(404).end("Not found");
+  }
+});
+await new Promise((resolveListen, reject) => {
+  server.once("error", reject);
+  server.listen(8080, "127.0.0.1", resolveListen);
+});
 
 const browser = await chromium.launch({
   executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -23,9 +49,21 @@ try {
   await page.locator("#event-kind").waitFor({ state: "visible" });
   const urlState = new URL(page.url());
   if (!urlState.searchParams.get("lat") || !urlState.searchParams.get("lng") || !urlState.searchParams.get("eclipse")) throw new Error("Shareable URL state is incomplete");
+  if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
+  if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
+  if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
+  if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
+  await page.locator("#cloud-result").filter({ hasText: "% low" }).waitFor();
+  await page.locator("#choose-location-button").click();
+  await page.locator("#saved-locations-card").waitFor({ state: "visible" });
+  await page.screenshot({ path: "test-artifacts/opening.png", fullPage: true });
   if (await page.locator(".saved-location").count() !== 1) throw new Error("Expected the loaded location to be saved for this eclipse");
   if (await page.locator("#weather-legend img").count() !== 0) throw new Error("Expected the local horizontal weather legend, not a remote image");
-  if (await page.locator(".panel-actions > button").count() !== 3) throw new Error("Expected symmetric eclipse, location and sharing actions");
+  const savedName = page.locator(".saved-location-name").first();
+  await savedName.fill("Edited smoke-test location");
+  await savedName.press("Tab");
+  if (new URL(page.url()).searchParams.get("name") !== "Edited smoke-test location") throw new Error("Edited saved name was not reflected in the share URL");
+  await page.locator(".saved-location-notes summary").first().click();
   const notes = page.locator(".saved-location textarea").first();
   await notes.fill("Smoke-test viewing note");
   await notes.press("Tab");
@@ -45,7 +83,7 @@ try {
     if (Math.abs(check.actual.elevationDeg - check.expectedElevationDeg) >= 0.03) throw new Error(`IMCCE altitude check failed at ${check.time}: ${JSON.stringify(check)}`);
   }
   console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
-  await page.locator("#analyze-weather").click();
+  await page.locator(".saved-eclipse-heading button").first().click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
   if (await page.locator(".weather-result").count() !== 1) throw new Error("Expected one result for the initially saved location");
   await page.locator("#weather-status").filter({ hasText: "Comparison refreshed" }).waitFor();
@@ -58,6 +96,7 @@ try {
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
   if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
   if (digest.candidates[0].notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
+  if (digest.candidates[0].name !== "Edited smoke-test location") throw new Error("Digest is missing the edited saved location name");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");
   for (const candidate of digest.candidates) {
     const terrain = candidate.terrain;
@@ -80,8 +119,10 @@ try {
     document.body.append(tile);
   }));
   if (retryResult.urlCalls !== 2 || retryResult.retryEvents !== 1) throw new Error(`Unexpected weather retry result: ${JSON.stringify(retryResult)}`);
-  await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
+  await page.screenshot({ path: "test-artifacts/planner.png", fullPage: true });
 
+  await page.locator(".saved-location-header button", { hasText: "View" }).first().click();
+  await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
   await page.locator("#ar-button").click();
   await page.locator("#ar-open-calibration").click();
   await page.locator("#ar-calibrate").click();
@@ -95,7 +136,8 @@ try {
   await page.locator("#ar-status").filter({ hasText: "Calibration saved" }).waitFor();
 
   if (failures.length) throw new Error(failures.join("\n"));
-  console.log("UI smoke test passed. Screenshots: test-artifacts/main.png and test-artifacts/calibration.png");
+  console.log("UI smoke test passed. Screenshots: test-artifacts/opening.png, planner.png, main.png and calibration.png");
 } finally {
   await browser.close();
+  await new Promise((resolveClose) => server.close(resolveClose));
 }
