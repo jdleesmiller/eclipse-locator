@@ -35,6 +35,7 @@
     const weather = candidate.weatherRating;
     let recommendation;
     if (terrain === "blocked") recommendation = "unsuitable";
+    else if (!candidate.weather) recommendation = terrain === "marginal" ? "risky" : "terrain only";
     else if (terrain === "marginal" || weather === "poor") recommendation = "risky";
     else if ((terrain === "comfortable" || terrain === "acceptable") && (weather === "excellent" || weather === "good")) recommendation = "strong candidate";
     else recommendation = "viable";
@@ -56,16 +57,16 @@
   }
 
   function enrichCandidates(candidates, previousDigest) {
-    const rank = { "strong candidate": 3, viable: 2, risky: 1, unsuitable: 0 };
+    const rank = { "strong candidate": 4, viable: 3, "terrain only": 2, risky: 1, unsuitable: 0 };
     return candidates.map((candidate) => {
       const trend = trendAgainst(candidate, previousDigest);
       const enriched = { ...candidate, trend };
       return { ...enriched, overall: overallFor(enriched) };
-    }).sort((a, b) => rank[b.overall.recommendation] - rank[a.overall.recommendation] || b.score - a.score);
+    }).sort((a, b) => rank[b.overall.recommendation] - rank[a.overall.recommendation] || (b.score ?? -1) - (a.score ?? -1));
   }
 
   function createDigest({ sun, candidates, targetTime, warnings = [], includeDebug = false }) {
-    const times = candidates[0]?.weather?.times || EclipseWeather.forecastWindow(targetTime);
+    const times = candidates.find((candidate) => candidate.weather)?.weather.times || EclipseWeather.forecastWindow(targetTime);
     return {
       schemaVersion: 2,
       retrievedAt: new Date().toISOString(),
@@ -89,9 +90,10 @@
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
         weather: candidate.weather,
+        cloudUnavailableReason: candidate.cloudUnavailableReason || null,
         lowCloudDistanceProfile: lowCloudDistanceProfile(candidate),
         trend: candidate.trend,
-        overall: { ...candidate.overall, weatherScore: candidate.score },
+        overall: { ...candidate.overall, weatherScore: candidate.score ?? null },
         ...(includeDebug ? { debug: candidate.debug } : {}),
       })),
       warnings,
@@ -105,12 +107,14 @@
       `Sun: ${digest.sun.azimuthDeg}° az / ${digest.sun.elevationDeg}° alt · wedge ±${digest.wedge.halfWidthDeg}°`, "",
     ];
     for (const candidate of digest.candidates) {
-      const target = candidate.weather.target;
       const terrain = candidate.terrain;
       lines.push(
         `## ${candidate.name}`,
         ...(candidate.notes ? [`Notes: ${candidate.notes}`] : []),
-        `Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`,
+        ...(candidate.weather ? (() => {
+          const target = candidate.weather.target;
+          return [`Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`];
+        })() : [`Weather: unavailable (${candidate.cloudUnavailableReason || "outside the available forecast coverage"}).`]),
         `Terrain: ${terrain.classification}; centre ${terrain.centreRayHorizonDeg}°, ±0.25° max ${terrain.within025DegMaxAngleDeg}°, ±0.5° max ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°; ±5° context ${terrain.contextWedgeMaxAngleDeg}°.`,
         `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",
       );

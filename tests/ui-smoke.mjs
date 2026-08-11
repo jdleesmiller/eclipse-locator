@@ -58,7 +58,8 @@ try {
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
   if ((await page.locator(".technical-details > summary").textContent()).trim() !== "Details") throw new Error("Expected the simplified Details heading");
   await page.setViewportSize({ width: 820, height: 1100 });
-  await page.evaluate(() => updateCalculations({ fit: true }));
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { map.invalidateSize({ pan: false }); updateCalculations({ fit: true }); });
   await page.waitForTimeout(350);
   const tabletLayout = await page.evaluate(() => {
     const marker = document.querySelector(".observer-pin").getBoundingClientRect();
@@ -121,21 +122,41 @@ try {
     if (Math.abs(check.actual.heading - check.heading) > 0.01 || Math.abs(check.actual.pitch - check.pitch) > 0.01) throw new Error(`Rear-camera orientation conversion failed: ${JSON.stringify(check)}`);
   }
   if (await page.locator("#phase-technical > div").count() !== 5) throw new Error("Expected detailed total-eclipse phases under technical details");
+  await page.evaluate(() => {
+    const locations = savedLocationsForCurrentEclipse();
+    locations.push({
+      id: locationId({ lat: 51.56674, lng: -0.28340 }),
+      name: "Wembley Park, GB",
+      lat: 51.56674,
+      lng: -0.28340,
+      timezone: "Europe/London",
+      eclipsePeak: eventDate(state.eclipse.peak).toISOString(),
+      notes: "",
+      updatedAt: new Date().toISOString(),
+    });
+    storeSavedLocationsForCurrentEclipse(locations);
+    renderSavedLocations();
+  });
   await page.locator(".saved-eclipse-heading button").first().click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
-  if (await page.locator(".weather-result").count() !== 1) throw new Error("Expected one result for the initially saved location");
-  await page.locator("#weather-status").filter({ hasText: "Comparison refreshed" }).waitFor();
+  if (await page.locator(".weather-result").count() !== 2) throw new Error("Expected both the Spanish and out-of-area saved locations");
+  await page.locator("#weather-status").filter({ hasText: "Cloud forecast included for 1 of 2 places" }).waitFor();
+  if (!await page.locator(".terrain-only-result").filter({ hasText: "cloud unavailable" }).isVisible()) throw new Error("Expected an out-of-area terrain-only comparison result");
   await page.locator("#weather-digest").waitFor({ state: "visible" });
   await page.locator("#copy-weather-json").click();
   const digest = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
   if (!digest.validTimes.target.startsWith("2026-08-12T18:27:")) throw new Error("Digest target time is incorrect");
   if (digest.validTimes.before !== "2026-08-12T18:00:00.000Z" || digest.validTimes.after !== "2026-08-12T19:00:00.000Z") throw new Error("Digest interpolation window is incorrect");
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
-  if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
-  if (!digest.candidates.every((candidate) => candidate.lowCloudDistanceProfile?.length >= 20)) throw new Error("Digest is missing the compact low-cloud distance profile");
-  if (!digest.candidates.every((candidate) => candidate.lowCloudDistanceProfile.at(-1)?.distanceKm === 60)) throw new Error("Cloud distance profiles should cover the full 60 km sightline");
-  if (digest.candidates[0].notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
-  if (digest.candidates[0].name !== "Edited smoke-test location") throw new Error("Digest is missing the edited saved location name");
+  const forecastCandidates = digest.candidates.filter((candidate) => candidate.weather);
+  const terrainOnlyCandidates = digest.candidates.filter((candidate) => !candidate.weather);
+  if (forecastCandidates.length !== 1 || terrainOnlyCandidates.length !== 1) throw new Error("Digest should distinguish forecast and terrain-only candidates");
+  if (!forecastCandidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
+  if (!forecastCandidates.every((candidate) => candidate.lowCloudDistanceProfile?.length >= 20)) throw new Error("Digest is missing the compact low-cloud distance profile");
+  if (!forecastCandidates.every((candidate) => candidate.lowCloudDistanceProfile.at(-1)?.distanceKm === 60)) throw new Error("Cloud distance profiles should cover the full 60 km sightline");
+  if (!terrainOnlyCandidates.every((candidate) => candidate.cloudUnavailableReason && candidate.terrain.classification)) throw new Error("Terrain-only candidates need a reason and terrain result");
+  const editedCandidate = digest.candidates.find((candidate) => candidate.name === "Edited smoke-test location");
+  if (editedCandidate?.notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");
   for (const candidate of digest.candidates) {
     const terrain = candidate.terrain;

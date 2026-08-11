@@ -359,14 +359,9 @@ function inferredEclipsePeak(groupKey, location) {
 }
 
 function compareSavedGroup(groupKey, locations) {
-  const first = locations[0];
-  if (!first) return;
-  activateLocation(first, { eclipsePeak: inferredEclipsePeak(groupKey, first), keepGate: true });
-  if (!weatherApplies()) {
-    savedComparison.hidden = false;
-    weatherStatus.textContent = "Cloud comparison is available only for locations in the current AEMET forecast area and short forecast window.";
-    return;
-  }
+  const anchor = locations.find(inSpainWeatherBounds) || locations[0];
+  if (!anchor) return;
+  activateLocation(anchor, { eclipsePeak: inferredEclipsePeak(groupKey, anchor), keepGate: true });
   savedComparison.hidden = false;
   analyzeWeather();
 }
@@ -391,7 +386,7 @@ function renderSavedLocations() {
     const compareButton = document.createElement("button");
     compareButton.type = "button";
     compareButton.className = "secondary";
-    compareButton.textContent = "Compare forecast";
+    compareButton.textContent = "Compare places";
     compareButton.addEventListener("click", () => compareSavedGroup(groupKey, locations));
     groupHeading.append(groupTitle, compareButton);
     group.append(groupHeading);
@@ -574,11 +569,15 @@ function selectEclipse(eclipse, fit = true) {
   rememberCurrentLocation();
 }
 
-function weatherApplies() {
-  if (!(state.viewingDate instanceof Date) || !inSpainWeatherBounds(state.observer)) return false;
+function weatherTimeApplies() {
+  if (!(state.viewingDate instanceof Date)) return false;
   if (TEST_MODE) return true;
   const delta = state.viewingDate.getTime() - Date.now();
   return delta >= -WEATHER_PAST_GRACE_MS && delta <= WEATHER_FUTURE_HORIZON_MS;
+}
+
+function weatherApplies() {
+  return inSpainWeatherBounds(state.observer) && weatherTimeApplies();
 }
 
 function updateWeatherTimeOptions() {
@@ -679,18 +678,19 @@ function renderWeatherResults(results) {
   for (const result of results) {
     const item = document.createElement("article");
     item.className = "weather-result";
-    const target = result.weather.target;
     const terrain = result.terrain;
     const trend = result.trend.classification;
     const trendLabel = trend === "unavailable" ? "no previous digest" : trend;
     const placeLabel = result.name;
     const safePlaceLabel = escapeHtml(placeLabel);
-    const times = result.weather.times;
-    const targetLabel = `${formatUtcHour(times.target)} estimate`;
-    const beforeLabel = formatUtcHour(times.before);
-    const afterLabel = formatUtcHour(times.after);
     const notesDetail = result.notes ? `<details class="site-access-detail"><summary>Location notes</summary><p>${escapeHtml(result.notes)}</p></details>` : "";
-    item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
+    if (result.weather) {
+      const target = result.weather.target;
+      const times = result.weather.times;
+      const targetLabel = `${formatUtcHour(times.target)} estimate`;
+      const beforeLabel = formatUtcHour(times.before);
+      const afterLabel = formatUtcHour(times.after);
+      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
       <small><b>${targetLabel}:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
       ${notesDetail}
       <details><summary>Hourly and wedge details</summary><div class="weather-detail-grid">
@@ -701,9 +701,17 @@ function renderWeatherResults(results) {
         <span>Low 50 km wedge</span><span>${result.weather.before.low.km50.wedgeMean}%</span><span>${target.low.km50.wedgeMean}%</span><span>${result.weather.after.low.km50.wedgeMean}%</span>
       </div><p><b>Target low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>Target total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
       <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${result.debug.samples.length} cloud / ${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ cloud: result.debug.samples, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
+    } else {
+      item.classList.add("terrain-only-result");
+      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>cloud unavailable · ${terrain.classification} terrain</span></button>
+        <small><b>Cloud:</b> ${escapeHtml(result.cloudUnavailableReason)}<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+        ${notesDetail}
+        <details><summary>Terrain details</summary><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
+        <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
+    }
     item.querySelector(".weather-result-main").addEventListener("click", () => {
       const comparisonResults = state.weather.results;
-      activateLocation(result, { eclipsePeak: times.target });
+      activateLocation(result, { eclipsePeak: result.weather?.times.target || result.eclipsePeak || state.viewingDate.toISOString() });
       state.weather.results = comparisonResults;
     });
     weatherResults.append(item);
@@ -739,36 +747,83 @@ function buildWeatherDigest(results) {
   });
 }
 
+function weatherCandidateBatches(candidates) {
+  const batches = [];
+  for (const candidate of candidates) {
+    const batch = batches.find((items) => {
+      if (items.length >= 9) return false;
+      const combined = [...items, candidate];
+      const latitudes = combined.map((item) => item.lat);
+      const longitudes = combined.map((item) => item.lng);
+      // Leave room inside the proxy's four-degree limit for the 60 km wedge.
+      return Math.max(...latitudes) - Math.min(...latitudes) <= 2.8
+        && Math.max(...longitudes) - Math.min(...longitudes) <= 2.8;
+    });
+    if (batch) batch.push(candidate);
+    else batches.push([candidate]);
+  }
+  return batches;
+}
+
 async function analyzeWeather() {
   const button = document.querySelector("#analyze-weather");
   button.disabled = true;
   weatherResults.replaceChildren();
   weatherDigest.hidden = true;
   const forecastTimes = EclipseWeather.forecastWindow(state.viewingDate);
-  weatherStatus.textContent = `Loading ${formatUtcHour(forecastTimes.before)} and ${formatUtcHour(forecastTimes.after)} UTC cloud grids for seven-ray wedges…`;
+  weatherStatus.textContent = weatherTimeApplies()
+    ? `Loading ${formatUtcHour(forecastTimes.before)} and ${formatUtcHour(forecastTimes.after)} UTC cloud grids for eligible sites…`
+    : "The eclipse is outside the cloud-forecast window; comparing terrain only…";
   try {
-    const candidates = savedLocationsForCurrentEclipse().filter((candidate) => inSpainWeatherBounds(candidate)
-      && L.latLng(state.observer).distanceTo(L.latLng(candidate.lat, candidate.lng)) <= 300000);
-    if (!candidates.length) throw new Error("save at least one location in Spain first");
-    if (candidates.length > 9) throw new Error("comparison is limited to 9 saved locations within 300 km at a time");
+    const candidates = savedLocationsForCurrentEclipse();
+    if (!candidates.length) throw new Error("save at least one location first");
+    if (candidates.length > 9) throw new Error("comparison is limited to 9 saved locations at a time");
     const preparedCandidates = candidates.map((candidate) => {
       const sun = EclipseWeather.solarPosition(state.viewingDate, candidate.lat, candidate.lng);
       return { ...candidate, azimuthDeg: sun.azimuthDeg, sunElevationDeg: sun.elevationDeg };
     });
-    const cloudResults = await EclipseWeather.analyzeCandidates(preparedCandidates, state.viewingDate, null, (complete, total, name) => {
-      weatherStatus.textContent = complete ? `Processed cloud wedge for ${name} (${complete} of ${total})…` : "Downloading four small AEMET regional rasters…";
+    const cloudCandidates = weatherTimeApplies() ? preparedCandidates.filter(inSpainWeatherBounds) : [];
+    const cloudResults = [];
+    const cloudFailures = new Map();
+    for (const batch of weatherCandidateBatches(cloudCandidates)) {
+      try {
+        const batchResults = await EclipseWeather.analyzeCandidates(batch, state.viewingDate, null, (complete, total, name) => {
+          weatherStatus.textContent = complete ? `Processed cloud wedge for ${name} (${cloudResults.length + complete} of ${cloudCandidates.length})…` : "Downloading AEMET regional cloud grids…";
+        });
+        cloudResults.push(...batchResults);
+      } catch (error) {
+        batch.forEach((candidate) => cloudFailures.set(candidate.id, `AEMET cloud analysis failed: ${error.message}`));
+      }
+    }
+    const cloudById = new Map(cloudResults.map((candidate) => [candidate.id, candidate]));
+    const terrainCandidates = preparedCandidates.map((candidate) => cloudById.get(candidate.id) || {
+      ...candidate,
+      weather: null,
+      weatherRating: "unavailable",
+      score: null,
+      debug: { samples: [] },
+      cloudUnavailableReason: cloudFailures.get(candidate.id)
+        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area." : "The eclipse is outside the short cloud-forecast window."),
     });
     weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
-    const terrainResults = await EclipseWeather.analyzeTerrain(cloudResults, (complete, total, name) => {
-      weatherStatus.textContent = `Processed terrain for ${name} (${complete} of ${total})…`;
-    });
+    const terrainResults = [];
+    for (let offset = 0; offset < terrainCandidates.length; offset += 4) {
+      const batch = terrainCandidates.slice(offset, offset + 4);
+      const batchResults = await EclipseWeather.analyzeTerrain(batch, (complete, _total, name) => {
+        weatherStatus.textContent = `Processed terrain for ${name} (${offset + complete} of ${terrainCandidates.length})…`;
+      });
+      terrainResults.push(...batchResults);
+    }
     const results = EclipseWeather.enrichCandidates(terrainResults, loadPreviousWeatherDigest());
     state.weather.results = results;
     renderWeatherResults(results);
     state.weather.digest = buildWeatherDigest(results);
     try { localStorage.setItem(`${WEATHER_DIGEST_STORAGE_KEY}:${eclipseStorageKey()}`, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
     weatherDigest.hidden = false;
-    weatherStatus.textContent = "Comparison refreshed.";
+    const terrainOnlyCount = results.filter((candidate) => !candidate.weather).length;
+    weatherStatus.textContent = terrainOnlyCount
+      ? `Comparison refreshed. Cloud forecast included for ${results.length - terrainOnlyCount} of ${results.length} places; ${terrainOnlyCount} compared on terrain only.`
+      : "Comparison refreshed.";
     button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
@@ -1586,6 +1641,7 @@ function updateCalculations({ fit = false } = {}) {
     renderArOverlay();
   }
   if (fit) {
+    map.stop();
     const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
     const sidePanelPadding = window.matchMedia("(min-width: 760px)").matches
       ? Math.ceil(panel.getBoundingClientRect().width) + 45
@@ -1594,7 +1650,21 @@ function updateCalculations({ fit = false } = {}) {
       paddingTopLeft: [45, 45],
       paddingBottomRight: [sidePanelPadding, 45],
       maxZoom: 10,
+      animate: false,
     });
+    const keepObserverClearOfPanel = () => {
+      if (!window.matchMedia("(min-width: 760px)").matches) return;
+      const mapLeft = map.getContainer().getBoundingClientRect().left;
+      const unobscuredRight = panel.getBoundingClientRect().left - mapLeft - 28;
+      const observerPoint = map.latLngToContainerPoint(state.observer);
+      if (observerPoint.x > unobscuredRight) {
+        const zoom = map.getZoom();
+        const shiftedCentre = map.project(map.getCenter(), zoom).add([observerPoint.x - unobscuredRight, 0]);
+        map.setView(map.unproject(shiftedCentre, zoom), zoom, { animate: false });
+      }
+    };
+    keepObserverClearOfPanel();
+    requestAnimationFrame(keepObserverClearOfPanel);
   }
 }
 
