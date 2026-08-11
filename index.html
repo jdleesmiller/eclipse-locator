@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260811-weather3" />
+    <link rel="stylesheet" href="styles.css?v=20260811-weather4" />
   </head>
   <body>
     <main>
@@ -69,14 +69,15 @@
           <p id="weather-map-status" class="weather-map-status" aria-live="polite"></p>
           <img id="weather-legend" class="weather-legend" alt="AEMET forecast layer legend" />
           <button id="analyze-weather" type="button">Compare Asturias viewing sites</button>
-          <p id="weather-status" class="status">Overlay values are model grid forecasts, not observations.</p>
+          <p id="weather-status" class="status">Comparison uses both 18:00 and 19:00 grids around the 18:27 totality time.</p>
+          <label class="weather-debug-toggle"><input id="weather-debug" type="checkbox" /> Include developer samples and angles</label>
           <div id="weather-results" class="weather-results"></div>
           <details id="weather-digest" class="weather-digest" hidden>
             <summary>Weather digest</summary>
             <div class="digest-actions"><button id="copy-weather-digest" type="button">Copy Markdown</button><button id="show-json-digest" class="secondary" type="button">Show JSON</button></div>
             <textarea id="weather-digest-text" readonly aria-label="Weather digest"></textarea>
           </details>
-          <p class="weather-source"><a href="https://ama.aemet.es/visor-de-variables" target="_blank" rel="noreferrer">AEMET aviation variable viewer</a> · run initialization is not exposed by the WMS.</p>
+          <p class="weather-source"><a href="https://ama.aemet.es/visor-de-variables" target="_blank" rel="noreferrer">AEMET aviation variable viewer</a> · terrain: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles / EU-DEM</a> · run initialization is not exposed.</p>
         </section>
 
         <div class="terrain-card">
@@ -172,9 +173,11 @@
     <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
     <script src="config.js?v=20260811-weather3"></script>
     <script src="data/candidates.js?v=20260811-weather1"></script>
-    <script src="weather/aemet-client.js?v=20260811-weather3"></script>
-    <script src="weather/corridor-analysis.js?v=20260811-weather2"></script>
-    <script src="weather/digest.js?v=20260811-weather1"></script>
-    <script src="app.js?v=20260811-weather3"></script>
+    <script src="weather/aemet-client.js?v=20260811-weather4"></script>
+    <script src="weather/corridor-analysis.js?v=20260811-weather4"></script>
+    <script src="weather/terrain-analysis.js?v=20260811-weather4"></script>
+    <script src="weather/solar-verification.js?v=20260811-weather4"></script>
+    <script src="weather/digest.js?v=20260811-weather4"></script>
+    <script src="app.js?v=20260811-weather4"></script>
   </body>
 </html>

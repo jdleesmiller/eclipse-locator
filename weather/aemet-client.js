@@ -126,6 +126,30 @@
     return data.values;
   }
 
+  async function rasterValues(kinds, points, validTimes) {
+    if (TEST_MODE) {
+      return Object.fromEntries(validTimes.map((validTime, timeIndex) => [validTime, Object.fromEntries(kinds.map((kind) => [kind, points.map((point) => Math.max(0, Math.min(100, testValue(kind, point.lat, point.lng) + timeIndex * (kind === "low" ? -12 : 6))))]))]));
+    }
+    if (!PROXY_URL) throw new Error("weather proxy is not configured; add its Cloud Run URL to config.js");
+    const response = await fetch(`${PROXY_URL}/weather-raster-values`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: kinds, times: validTimes, points }),
+    });
+    if (!response.ok) {
+      let detail = "";
+      try { detail = (await response.json()).error || ""; } catch { /* response was not JSON */ }
+      throw new Error(`weather proxy returned ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    const data = await response.json();
+    for (const validTime of validTimes) {
+      for (const kind of kinds) {
+        if (!Array.isArray(data.values?.[validTime]?.[kind]) || data.values[validTime][kind].length !== points.length) throw new Error(`weather proxy returned incomplete ${kind} cloud data for ${validTime}`);
+      }
+    }
+    return data.values;
+  }
+
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, createWmsLayer, pointValue, pointValues });
+  Object.assign(window.EclipseWeather, { WMS_URL, LAYERS, PROXY_URL, wmsLayerOptions, createWmsLayer, pointValue, pointValues, rasterValues });
 }());

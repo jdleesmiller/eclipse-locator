@@ -1,33 +1,106 @@
 (function () {
-  function createDigest({ validTime, azimuthDeg, elevationDeg, candidates, warnings = [] }) {
+  const TREND_THRESHOLD_PCT = 10;
+
+  function candidateMetrics(candidate) {
+    const target = candidate.weather?.target;
+    if (!target) return null;
     return {
+      cloudAtObserverPct: target.cloudAtObserverPct,
+      lowCloudAtObserverPct: target.lowCloudAtObserverPct,
+      lowCloud10kmPct: target.low.km10.wedgeMean,
+      lowCloud25kmPct: target.low.km25.wedgeMean,
+      lowCloud50kmPct: target.low.km50.wedgeMean,
+    };
+  }
+
+  function trendAgainst(candidate, previousDigest) {
+    const previous = previousDigest?.candidates?.find((item) => item.name === candidate.name);
+    const currentMetrics = candidateMetrics(candidate);
+    const previousMetrics = previous ? candidateMetrics(previous) : null;
+    if (!currentMetrics || !previousMetrics) return { previousRunAvailable: false, classification: "unavailable", thresholdPctPoints: TREND_THRESHOLD_PCT };
+    const deltas = Object.fromEntries(Object.keys(currentMetrics).map((key) => [key.replace(/Pct$/, "DeltaPct"), Math.round(currentMetrics[key] - previousMetrics[key])]));
+    const meanDeltaPct = Object.values(deltas).reduce((sum, value) => sum + value, 0) / Object.values(deltas).length;
+    return {
+      previousRunAvailable: true,
+      previousRetrievedAt: previousDigest.retrievedAt,
+      ...deltas,
+      meanDeltaPct: Number(meanDeltaPct.toFixed(1)),
+      thresholdPctPoints: TREND_THRESHOLD_PCT,
+      classification: meanDeltaPct > TREND_THRESHOLD_PCT ? "worsening" : meanDeltaPct < -TREND_THRESHOLD_PCT ? "improving" : "broadly unchanged",
+    };
+  }
+
+  function overallFor(candidate) {
+    const terrain = candidate.terrain.classification;
+    const weather = candidate.weatherRating;
+    let recommendation;
+    if (terrain === "blocked") recommendation = "unsuitable";
+    else if (terrain === "marginal" || weather === "poor") recommendation = "risky";
+    else if ((terrain === "comfortable" || terrain === "acceptable") && (weather === "excellent" || weather === "good")) recommendation = "strong candidate";
+    else recommendation = "viable";
+    return { weatherRating: weather, terrainRating: terrain, trendRating: candidate.trend.classification, recommendation };
+  }
+
+  function enrichCandidates(candidates, previousDigest) {
+    const rank = { "strong candidate": 3, viable: 2, risky: 1, unsuitable: 0 };
+    return candidates.map((candidate) => {
+      const trend = trendAgainst(candidate, previousDigest);
+      const enriched = { ...candidate, trend };
+      return { ...enriched, overall: overallFor(enriched) };
+    }).sort((a, b) => rank[b.overall.recommendation] - rank[a.overall.recommendation] || b.score - a.score);
+  }
+
+  function createDigest({ sun, candidates, warnings = [], includeDebug = false }) {
+    return {
+      schemaVersion: 2,
       retrievedAt: new Date().toISOString(),
-      source: "AEMET AMA HARMONIE-AROME public WMS",
-      dataset: "ama_netcdf cloud-cover layers",
+      source: "AEMET AMA HARMONIE-AROME public WCS/WMS and AWS Terrain Tiles",
+      dataset: "ama_netcdf total/low cloud cover; Terrarium EU-DEM terrain tiles",
       modelRun: null,
-      modelRunNote: "Initialization time is not exposed by the public WMS capabilities.",
-      validTime,
-      localTime: new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid", timeZoneName: "short" }).format(new Date(validTime)),
-      sampling: { spacingKm: EclipseWeather.SAMPLE_SPACING_KM, method: "AEMET model grid value via WMS GetFeatureInfo; no interpolation" },
-      sun: { azimuthDeg: Number(azimuthDeg.toFixed(1)), elevationDeg: Number(elevationDeg.toFixed(1)) },
-      candidates: candidates.map(({ name, lat, lng, score, metrics }) => ({ name, lat, lng, score, ...metrics })),
+      modelRunNote: "Initialization time is not exposed by the public AEMET services.",
+      validTimes: { before: EclipseWeather.BEFORE_TIME, after: EclipseWeather.AFTER_TIME, target: EclipseWeather.TARGET_TIME },
+      interpolation: { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: EclipseWeather.INTERPOLATION_FRACTION, label: "18:27 approximation; not an AEMET model output time" },
+      sun: {
+        azimuthDeg: Number(sun.azimuthDeg.toFixed(2)), elevationDeg: Number(sun.elevationDeg.toFixed(2)),
+        verifiedAgainst: sun.verifiedAgainst, reference: sun.reference,
+        azimuthDifferenceDeg: Number(sun.azimuthDifferenceDeg.toFixed(4)), elevationDifferenceDeg: Number(sun.elevationDifferenceDeg.toFixed(4)),
+        convention: sun.convention,
+      },
+      wedge: { halfWidthDeg: EclipseWeather.WEDGE_HALF_WIDTH_DEG, rayOffsetsDeg: EclipseWeather.RAY_OFFSETS_DEG, nominalRaySpacingDeg: 2, distanceSpacingKm: EclipseWeather.SAMPLE_SPACING_KM },
+      terrainSampling: { nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, safetyMarginDeg: 2 },
+      candidates: candidates.map((candidate) => ({
+        name: candidate.name, lat: candidate.lat, lng: candidate.lng,
+        sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
+        terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
+        weather: candidate.weather,
+        trend: candidate.trend,
+        overall: { ...candidate.overall, weatherScore: candidate.score },
+        ...(includeDebug ? { debug: candidate.debug } : {}),
+      })),
       warnings,
     };
   }
 
   function digestMarkdown(digest) {
     const lines = [
-      `# Eclipse cloud digest`,
-      `AEMET HARMONIE-AROME · valid ${digest.validTime} (${digest.localTime})`,
-      `Sun ${digest.sun.azimuthDeg}° azimuth / ${digest.sun.elevationDeg}° elevation`, "",
+      "# Eclipse weather digest",
+      `Target: 12 Aug 2026 18:27 UTC (interpolated approximation between AEMET 18:00 and 19:00 grids)`,
+      `Sun: ${digest.sun.azimuthDeg}° az / ${digest.sun.elevationDeg}° alt · wedge ±${digest.wedge.halfWidthDeg}°`, "",
     ];
     for (const candidate of digest.candidates) {
-      lines.push(`- ${candidate.name}: score ${candidate.score}/100; low cloud observer ${candidate.lowCloudAtObserverPct}%; low mean 10/25/50 km ${candidate.low.km10.mean}/${candidate.low.km25.mean}/${candidate.low.km50.mean}%; total mean 10/25/50 km ${candidate.total.km10.mean}/${candidate.total.km25.mean}/${candidate.total.km50.mean}%`);
+      const target = candidate.weather.target;
+      const terrain = candidate.terrain;
+      lines.push(
+        `## ${candidate.name}`,
+        `Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`,
+        `Terrain: ${terrain.classification}; wedge horizon ${terrain.wedgeMaxAngleDeg}° at ${terrain.blockingDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°.`,
+        `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",
+      );
     }
-    lines.push("", "Model initialization time is not exposed by this WMS. Scores are experimental; inspect the component values.");
+    lines.push("Terrain uses a DEM and geometric angles only; buildings, trees and atmospheric refraction are excluded. Forecast percentages are model estimates, not observations.");
     return lines.join("\n");
   }
 
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { createDigest, digestMarkdown });
+  Object.assign(window.EclipseWeather, { createDigest, digestMarkdown, enrichCandidates, TREND_THRESHOLD_PCT });
 }());

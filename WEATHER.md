@@ -13,7 +13,8 @@ The urgent implementation uses the public GeoServer behind AEMET's AMA aviation 
   - `ama_netcdf:ama_pen_cob_nub_altas` — high cloud cover (%)
   - `ama_netcdf:ama_pen_base_nub` — cloud base (thousands of feet)
 - Map format: OGC WMS, including transparent PNG.
-- Point values: WMS `GetFeatureInfo`, exposed as `GRAY_INDEX`. The app uses GeoServer's `text/javascript` response so a static GitHub Pages site can obtain values without CORS access or an API key.
+- Point values: WMS `GetFeatureInfo`, exposed as `GRAY_INDEX` (retained as a compatibility endpoint).
+- Regional values: WCS 2.0.1 `GetCoverage` as small GeoTIFF rasters. AEMET does not send a CORS permission header for WCS, so the Cloud Run proxy downloads and samples these rasters.
 - CRS: EPSG:4326 / CRS:84.
 - Domain advertised by the cloud layers: longitude −14.025…6.025, latitude 33.475…46.525.
 - Current valid-time dimension: hourly. On 11 August 2026 the service advertised 11 August 00:00 UTC through 14 August 00:00 UTC, including the eclipse window.
@@ -27,13 +28,17 @@ AEMET OpenData itself is not used. Its July 2025 FAQ says numerical-model output
 The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript response used for numeric point sampling, so numeric corridor analysis uses the small proxy in `server/`:
 
 - `weather/aemet-client.js` — WMS overlay configuration and batched proxy access.
-- `weather/corridor-analysis.js` — geodesic ray construction, 2.5 km sampling, component metrics and experimental scoring.
+- `weather/corridor-analysis.js` — geodesic ±5° wedge construction, 2.5 km sampling, hourly/interpolated metrics and weather scoring.
+- `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
+- `weather/solar-verification.js` — SunCalc/Astronomy Engine cross-check and coordinate conventions.
 - `weather/digest.js` — JSON and Markdown digest generation.
 - `data/candidates.js` — editable Asturias candidate list.
 
 Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
 
-Numeric analysis is deliberately on demand. The browser makes six batched proxy requests. The proxy resolves six candidates × 21 points × two fields as 252 small AEMET `GetFeatureInfo` requests with a concurrency limit of ten and a five-minute in-memory cache. Moving the map does not trigger new weather requests.
+Numeric analysis is deliberately on demand. The browser sends all candidate wedge coordinates in one bounded request. The proxy downloads four small regional rasters—total and low cloud at 18:00 and 19:00 UTC—with two-at-a-time concurrency, three-attempt upstream retry and a five-minute in-memory cache. It then samples the requested coordinates locally. This replaces more than a thousand potential `GetFeatureInfo` calls while preserving the existing WMS pipeline and point endpoint. Moving the map does not trigger analysis.
+
+Candidate terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy downloads each unique PNG tile once, with four-at-a-time concurrency, retry and an in-memory tile cache, then decodes requested elevations locally. The first 2 km uses 100 m steps because nearby ridges dominate this low-Sun problem. This avoids rate-limiting the Open-Meteo point API; the existing one-request terrain chart for the currently selected observer remains unchanged.
 
 ## Deploy the Google Cloud Run proxy
 
@@ -59,25 +64,31 @@ Then open `http://localhost:8080/?weatherProxy=http://localhost:8787`. The query
 
 ## Metrics and score
 
-For total and low cloud, the app exposes observer value plus mean and maximum values within 10, 25 and 50 km along the forecast Sun azimuth. Values are nearest AEMET model grid values; there is no spatial or temporal interpolation.
+For total and low cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5°. At 10, 25 and 50 km it reports centre-ray mean plus wedge mean, 75th percentile and maximum. Spatial values use the nearest AEMET raster cell.
+
+Both the 18:00 and 19:00 UTC model fields are retained. The 18:27 target estimate is a point-by-point linear interpolation with fraction `27/60 = 0.45`; the UI and digest label it as an approximation, not an AEMET output time.
 
 The provisional score is `100 − penalty`, where the penalty is:
 
 ```text
-38% low-cloud mean, first 10 km
-22% low-cloud mean, first 25 km
-16% total-cloud mean, first 25 km
-14% total-cloud mean, first 50 km
-10% low-cloud maximum, first 25 km
+38% low-cloud wedge mean, first 10 km
+22% low-cloud wedge mean, first 25 km
+16% total-cloud wedge mean, first 25 km
+14% total-cloud wedge mean, first 50 km
+10% low-cloud wedge p75, first 25 km
 ```
 
-This score is only a compact sorting aid. Raw components remain visible and should drive decisions.
+This score is only a compact sorting aid. Raw components remain visible and should drive decisions. Terrain is classified separately; a terrain-blocked site is always marked unsuitable and cannot rank first. A previous digest is saved in local storage. Five target-time cloud deltas are averaged; more than +10 percentage points is worsening, less than −10 is improving, and the middle range is broadly unchanged.
+
+## Solar geometry check
+
+Sun azimuth is clockwise from true north. Times are UTC instants. SunCalc is checked against Astronomy Engine 2.1.19 using standard atmospheric refraction at Gijón for 18:00, 18:27 and 19:00 UTC. The automated tolerance is 0.12°: the largest current difference is about 0.101°, caused by the libraries' slightly different low-altitude refraction approximations. The approximate 280.9° / 10.3° figures belong near 18:27 UTC; at 18:00 UTC the verified position is approximately 276.30° / 15.25°.
 
 ## Limitations and next steps
 
 - The WMS does not expose the model initialization time, so genuine run-to-run comparison cannot be identified reliably yet.
-- Cloud-base is available as a visual overlay, but line-of-sight/cloud-base intersection metrics are not in the urgent first slice.
-- The 18:25–18:30 UTC eclipse instant is represented by the 18:00 or 19:00 hourly model field; no time interpolation is performed.
+- Cloud-base is available as a visual overlay, but line-of-sight/cloud-base intersection metrics are not included.
+- Linear time interpolation smooths percentages but cannot predict cloud advection or formation between model hours.
 - Forecasts are model output, not observations, and can change markedly between runs.
 - AEMET could change or restrict the AMA endpoint. Only the small Cloud Run proxy should need updating if the upstream interface changes.
 
@@ -89,3 +100,4 @@ The current proxy allows a slightly wider box (longitude −7…−4, latitude 4
 - [AEMET HARMONIE-AROME viewer](https://www.aemet.es/es/eltiempo/prediccion/modelosnumericos/harmonie_arome)
 - [AEMET HARMONIE-AROME data-download help](https://www.aemet.es/en/eltiempo/prediccion/modelosnumericos/harmonie_arome/ayuda)
 - [AEMET OpenData FAQ](https://opendata.aemet.es/centrodedescargas/docs/FAQs130917.pdf)
+- [AWS Open Data Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)

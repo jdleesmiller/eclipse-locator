@@ -8,6 +8,7 @@ const EARTH_RADIUS_M = 6371008.8;
 const EYE_HEIGHT_M = 1.7;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
 const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
+const WEATHER_DIGEST_STORAGE_KEY = "eclipse-locator-weather-digest-v2";
 const TEST_MODE = new URLSearchParams(window.location.search).get("test") === "1";
 const CALIBRATION_POINTS = [
   { name: "centre", x: 0.5, y: 0.5 },
@@ -28,7 +29,7 @@ const state = {
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
-  weather: { layer: null, results: null, digest: null, digestFormat: "markdown" },
+  weather: { layer: null, results: null, digest: null, digestFormat: "markdown", debug: false },
   ar: {
     active: false,
     stream: null,
@@ -110,6 +111,7 @@ const weatherStatus = document.querySelector("#weather-status");
 const weatherResults = document.querySelector("#weather-results");
 const weatherDigest = document.querySelector("#weather-digest");
 const weatherDigestText = document.querySelector("#weather-digest-text");
+const weatherDebugToggle = document.querySelector("#weather-debug");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -298,11 +300,23 @@ function refreshWeatherAvailability() {
 function renderWeatherResults(results) {
   weatherResults.replaceChildren();
   for (const result of results) {
-    const item = document.createElement("button");
-    item.type = "button";
+    const item = document.createElement("article");
     item.className = "weather-result";
-    item.innerHTML = `<strong>${result.name}</strong><b class="weather-score">${result.score}/100</b><small>Low cloud: here ${result.metrics.lowCloudAtObserverPct}% · mean 10/25/50 km ${result.metrics.low.km10.mean}/${result.metrics.low.km25.mean}/${result.metrics.low.km50.mean}% · max 25 km ${result.metrics.low.km25.max}%<br>Total cloud: mean 10/25/50 km ${result.metrics.total.km10.mean}/${result.metrics.total.km25.mean}/${result.metrics.total.km50.mean}%</small>`;
-    item.addEventListener("click", () => activateLocation({ lat: result.lat, lng: result.lng, name: result.name, timezone: "Europe/Madrid" }));
+    const target = result.weather.target;
+    const terrain = result.terrain;
+    const trend = result.trend.classification;
+    const trendLabel = trend === "unavailable" ? "no previous digest" : trend;
+    item.innerHTML = `<button class="weather-result-main" type="button"><strong>${result.name}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
+      <small><b>18:27 estimate:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> horizon ${terrain.wedgeMaxAngleDeg}° at ${terrain.blockingDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+      <details><summary>Hourly and wedge details</summary><div class="weather-detail-grid">
+        <span></span><b>18:00</b><b>18:27*</b><b>19:00</b>
+        <span>Low here</span><span>${result.weather.before.lowCloudAtObserverPct}%</span><span>${target.lowCloudAtObserverPct}%</span><span>${result.weather.after.lowCloudAtObserverPct}%</span>
+        <span>Low 10 km wedge</span><span>${result.weather.before.low.km10.wedgeMean}%</span><span>${target.low.km10.wedgeMean}%</span><span>${result.weather.after.low.km10.wedgeMean}%</span>
+        <span>Low 25 km wedge</span><span>${result.weather.before.low.km25.wedgeMean}%</span><span>${target.low.km25.wedgeMean}%</span><span>${result.weather.after.low.km25.wedgeMean}%</span>
+        <span>Low 50 km wedge</span><span>${result.weather.before.low.km50.wedgeMean}%</span><span>${target.low.km50.wedgeMean}%</span><span>${result.weather.after.low.km50.wedgeMean}%</span>
+      </div><p><b>18:27 low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>18:27 total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
+      <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${result.debug.samples.length} cloud / ${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ cloud: result.debug.samples, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
+    item.querySelector(".weather-result-main").addEventListener("click", () => activateLocation({ lat: result.lat, lng: result.lng, name: result.name, timezone: "Europe/Madrid" }));
     weatherResults.append(item);
   }
 }
@@ -312,34 +326,54 @@ function showDigest(format = state.weather.digestFormat) {
   state.weather.digestFormat = format;
   weatherDigestText.value = format === "json" ? JSON.stringify(state.weather.digest, null, 2) : EclipseWeather.digestMarkdown(state.weather.digest);
   document.querySelector("#show-json-digest").textContent = format === "json" ? "Show Markdown" : "Show JSON";
+  document.querySelector("#copy-weather-digest").textContent = format === "json" ? "Copy JSON" : "Copy Markdown";
+}
+
+function loadPreviousWeatherDigest() {
+  try { return JSON.parse(localStorage.getItem(WEATHER_DIGEST_STORAGE_KEY) || "null"); }
+  catch { return null; }
+}
+
+function buildWeatherDigest(results) {
+  const sun = EclipseWeather.verifySunPosition(new Date(EclipseWeather.TARGET_TIME), state.observer.lat, state.observer.lng);
+  return EclipseWeather.createDigest({
+    sun, candidates: results, includeDebug: state.weather.debug,
+    warnings: [
+      "The 18:27 values are linearly interpolated approximations between the 18:00 and 19:00 AEMET grids.",
+      "Model initialization time is not exposed by AEMET's public services.",
+      "Cloud values use nearest model raster cells; terrain excludes buildings, trees and atmospheric refraction.",
+    ],
+  });
 }
 
 async function analyzeWeather() {
-  const validTime = weatherTimeSelect.value;
   const button = document.querySelector("#analyze-weather");
   button.disabled = true;
   weatherResults.replaceChildren();
   weatherDigest.hidden = true;
-  weatherStatus.textContent = "Sampling total and low cloud along six Sun-facing corridors…";
+  weatherStatus.textContent = "Loading 18:00 and 19:00 cloud grids for seven-ray wedges…";
   try {
     const candidates = window.ECLIPSE_CANDIDATES.map((candidate) => {
-      const sun = SunCalc.getPosition(new Date(validTime), candidate.lat, candidate.lng);
-      return { ...candidate, azimuthDeg: normalizeAngle(toDegrees(sun.azimuth) + 180) };
+      const sun = EclipseWeather.sunCalcPosition(new Date(EclipseWeather.TARGET_TIME), candidate.lat, candidate.lng);
+      return { ...candidate, azimuthDeg: sun.azimuthDeg, sunElevationDeg: sun.elevationDeg };
     });
-    const results = await EclipseWeather.analyzeCandidates(candidates, state.azimuth, validTime, (complete, total, name) => {
-      weatherStatus.textContent = `Sampled ${name} (${complete} of ${total})…`;
+    const cloudResults = await EclipseWeather.analyzeCandidates(candidates, state.azimuth, null, (complete, total, name) => {
+      weatherStatus.textContent = complete ? `Processed cloud wedge for ${name} (${complete} of ${total})…` : "Downloading four small AEMET regional rasters…";
     });
+    weatherStatus.textContent = "Sampling the Copernicus terrain horizon, with 100 m spacing through the first 2 km…";
+    const terrainResults = await EclipseWeather.analyzeTerrain(cloudResults, (complete, total, name) => {
+      weatherStatus.textContent = `Processed terrain for ${name} (${complete} of ${total})…`;
+    });
+    const results = EclipseWeather.enrichCandidates(terrainResults, loadPreviousWeatherDigest());
     state.weather.results = results;
     renderWeatherResults(results);
-    state.weather.digest = EclipseWeather.createDigest({
-      validTime, azimuthDeg: state.azimuth, elevationDeg: state.elevation, candidates: results,
-      warnings: ["Model initialization time is not exposed by AEMET's public WMS.", "Cloud values are nearest model grid cells; the experimental score is not a visibility guarantee."],
-    });
+    state.weather.digest = buildWeatherDigest(results);
+    try { localStorage.setItem(WEATHER_DIGEST_STORAGE_KEY, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
     showDigest("markdown");
     weatherDigest.hidden = false;
-    weatherStatus.textContent = `Comparison complete. Best provisional score: ${results[0].name} (${results[0].score}/100). Tap a site to move the map.`;
+    weatherStatus.textContent = `Comparison complete. ${results[0].name}: ${results[0].overall.recommendation}. Tap a site to move the map.`;
   } catch (error) {
-    weatherStatus.textContent = `Cloud analysis unavailable: ${error.message}. The map overlay may still work.`;
+    weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
   } finally {
     button.disabled = false;
   }
@@ -1169,13 +1203,16 @@ document.querySelector("#close-explorer").addEventListener("click", () => { ecli
 weatherLayerSelect.addEventListener("change", updateWeatherOverlay);
 weatherTimeSelect.addEventListener("change", () => {
   updateWeatherOverlay();
-  state.weather.results = null;
-  state.weather.digest = null;
-  weatherResults.replaceChildren();
-  weatherDigest.hidden = true;
-  weatherStatus.textContent = "Forecast time changed. Run the site comparison for fresh corridor values.";
+  weatherStatus.textContent = "Map overlay time changed. Site comparison still uses both 18:00 and 19:00 grids.";
 });
 document.querySelector("#analyze-weather").addEventListener("click", analyzeWeather);
+weatherDebugToggle.addEventListener("change", () => {
+  state.weather.debug = weatherDebugToggle.checked;
+  if (!state.weather.results) return;
+  renderWeatherResults(state.weather.results);
+  state.weather.digest = buildWeatherDigest(state.weather.results);
+  showDigest(state.weather.digestFormat);
+});
 document.querySelector("#show-json-digest").addEventListener("click", () => showDigest(state.weather.digestFormat === "json" ? "markdown" : "json"));
 document.querySelector("#copy-weather-digest").addEventListener("click", async () => {
   const text = weatherDigestText.value;

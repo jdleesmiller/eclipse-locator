@@ -21,11 +21,25 @@ page.on("pageerror", (error) => failures.push(`page: ${error.message}`));
 try {
   await page.goto("http://localhost:8080/?test=1", { waitUntil: "networkidle" });
   await page.locator("#event-kind").waitFor({ state: "visible" });
+  const solarChecks = await page.evaluate(() => ["2026-08-12T18:00:00.000Z", "2026-08-12T18:27:00.000Z", "2026-08-12T19:00:00.000Z"].map((time) => ({ time, ...EclipseWeather.verifySunPosition(new Date(time), 43.5322, -5.6611) })));
+  for (const check of solarChecks) {
+    // The two libraries use slightly different standard-refraction approximations;
+    // the largest observed difference across these three low-Sun checks is ~0.101°.
+    if (check.maximumDifferenceDeg >= 0.12) throw new Error(`Solar verification failed at ${check.time}: ${JSON.stringify(check)}`);
+  }
+  console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
   await page.locator("#analyze-weather").click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
   if (await page.locator(".weather-result").count() !== 6) throw new Error("Expected six weather candidate results");
   await page.locator("#weather-status").filter({ hasText: "Comparison complete" }).waitFor();
   await page.locator("#weather-digest").waitFor({ state: "visible" });
+  await page.locator("#weather-digest").locator("summary").click();
+  await page.locator("#show-json-digest").click();
+  const digest = JSON.parse(await page.locator("#weather-digest-text").inputValue());
+  if (digest.validTimes.target !== "2026-08-12T18:27:00.000Z") throw new Error("Digest target time is incorrect");
+  if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
+  if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
+  if (digest.candidates.some((candidate, index) => candidate.terrain.classification === "blocked" && index === 0)) throw new Error("A terrain-blocked candidate ranked first");
   const retryResult = await page.evaluate(() => new Promise((resolve, reject) => {
     const layer = EclipseWeather.createWmsLayer("low", "2026-08-12T18:00:00.000Z");
     let urlCalls = 0;
