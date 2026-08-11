@@ -70,7 +70,8 @@
       wedge: { halfWidthDeg: EclipseWeather.WEDGE_HALF_WIDTH_DEG, rayOffsetsDeg: EclipseWeather.RAY_OFFSETS_DEG, nominalRaySpacingDeg: 2, distanceSpacingKm: EclipseWeather.SAMPLE_SPACING_KM },
       terrainSampling: { rayOffsetsDeg: EclipseWeather.TERRAIN_RAY_OFFSETS_DEG, classificationHalfWidthDeg: EclipseWeather.TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG, contextHalfWidthDeg: 5, nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, eyeHeightM: EclipseWeather.TERRAIN_EYE_HEIGHT_M, earthCurvature: true, atmosphericRefraction: false, safetyMarginDeg: 2 },
       candidates: candidates.map((candidate) => ({
-        name: candidate.name, lat: candidate.lat, lng: candidate.lng,
+        name: candidate.name, municipality: candidate.municipality, officialId: candidate.officialId,
+        officialUrl: candidate.officialUrl, lat: candidate.lat, lng: candidate.lng,
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
         weather: candidate.weather,
@@ -92,7 +93,7 @@
       const target = candidate.weather.target;
       const terrain = candidate.terrain;
       lines.push(
-        `## ${candidate.name}`,
+        `## ${candidate.name}${candidate.municipality ? ` (${candidate.municipality})` : ""}`,
         `Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`,
         `Terrain: ${terrain.classification}; centre ${terrain.centreRayHorizonDeg}°, ±0.25° max ${terrain.within025DegMaxAngleDeg}°, ±0.5° max ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°; ±5° context ${terrain.contextWedgeMaxAngleDeg}°.`,
         `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",

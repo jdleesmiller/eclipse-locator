@@ -32,7 +32,7 @@ The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript resp
 - `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
 - `weather/solar-verification.js` — authoritative Astronomy Engine geometry plus an independent SunCalc approximation check.
 - `weather/digest.js` — JSON and Markdown digest generation.
-- `data/candidates.js` — editable Asturias candidate list.
+- `data/candidates.js` — six-site shortlist pinned from the official Eclipse Asturias observation-point feed, including source and mobility links.
 
 Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
 

@@ -1,10 +1,87 @@
 (function () {
+  // Shortlist pinned from the Principality of Asturias/FICYT official viewing-site
+  // feed on 11 August 2026. Keeping this local avoids making forecast analysis
+  // depend on another service at runtime. The official feed contains 78 sites.
+  // Source: https://eclipseasturias2026.ficyt.es/api/eclipse_observation_spots.php
+  window.ECLIPSE_CANDIDATE_SOURCE = {
+    label: "Official Eclipse Asturias viewing sites",
+    url: "https://eclipseasturias2026.ficyt.es/puntos_observacion.php?lang=en",
+    mobilityUrl: "https://eclipseasturias2026.ficyt.es/movilidad.php?lang=en",
+    checkedAt: "2026-08-11",
+  };
+
   window.ECLIPSE_CANDIDATES = [
-    { name: "Gijón", lat: 43.5322, lng: -5.6611 },
-    { name: "Avilés", lat: 43.5569, lng: -5.9248 },
-    { name: "Oviedo", lat: 43.3614, lng: -5.8494 },
-    { name: "Nava", lat: 43.3580, lng: -5.5060 },
-    { name: "Mieres", lat: 43.2515, lng: -5.7767 },
-    { name: "Pola de Lena", lat: 43.1609, lng: -5.8293 },
+    {
+      officialId: "gijon",
+      name: "Mirador de la Providencia",
+      municipality: "Gijón",
+      lat: 43.5539325,
+      lng: -5.618994,
+      capacity: null,
+      totalitySeconds: 105,
+      accessibility: "Access restrictions apply; consult Gijón City Council.",
+      transportFromGijon: "No dedicated shuttle to this site is listed in the published regional mobility plan.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=gijon",
+    },
+    {
+      officialId: "aviles",
+      name: "Centro Niemeyer",
+      municipality: "Avilés",
+      lat: 43.5576811,
+      lng: -5.9170674,
+      capacity: 10000,
+      totalitySeconds: 108,
+      accessibility: "An urban site with a published capacity of 10,000.",
+      transportFromGijon: "The special plan lists late Gijón–Avilés services in both directions at 23:00, 23:30, 00:00, 00:30 and 01:00; check CTA for the outward journey.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=aviles",
+    },
+    {
+      officialId: "oviedo",
+      name: "Parque del Oeste",
+      municipality: "Oviedo",
+      lat: 43.3628964,
+      lng: -5.8731131,
+      capacity: 3000,
+      totalitySeconds: 108,
+      accessibility: "A special access and traffic arrangement is planned.",
+      transportFromGijon: "The special plan lists late Oviedo–Gijón services in both directions at 23:30, 00:00, 00:30 and 01:00; allow for the local connection to the park.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=oviedo",
+    },
+    {
+      officialId: "nava",
+      name: "Les Praeres de Nava",
+      municipality: "Nava",
+      lat: 43.3213966,
+      lng: -5.4996654,
+      capacity: null,
+      totalitySeconds: 106,
+      accessibility: "Access is via mountain roads.",
+      transportFromGijon: "No direct eclipse shuttle from Gijón is listed in the published regional mobility plan.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=nava",
+    },
+    {
+      officialId: "mieres",
+      name: "Collau de Les Muries–Polio",
+      municipality: "Mieres",
+      lat: 43.2304175,
+      lng: -5.7257029,
+      capacity: 900,
+      totalitySeconds: 108,
+      accessibility: "A mountain site with a published capacity of 900.",
+      transportFromGijon: "No direct eclipse shuttle from Gijón is listed in the published regional mobility plan.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=mieres",
+    },
+    {
+      officialId: "lena",
+      name: "Prau Llagüezos–La Cobertoria",
+      municipality: "Lena",
+      lat: 43.1466234,
+      lng: -5.9068301,
+      capacity: 2000,
+      totalitySeconds: 109,
+      accessibility: "A mountain site with a published capacity of 2,000.",
+      transportFromGijon: "No direct eclipse shuttle from Gijón is listed in the published regional mobility plan.",
+      officialUrl: "https://eclipseasturias2026.ficyt.es/punto-observacion.php?slug=lena",
+    },
   ];
 }());
