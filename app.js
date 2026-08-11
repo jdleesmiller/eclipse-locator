@@ -79,6 +79,7 @@ const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
 const profileCloudKey = document.querySelector("#profile-cloud-key");
 const profileCloudCaption = document.querySelector("#profile-cloud-caption");
+const profileCloudRefresh = document.querySelector("#profile-cloud-refresh");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
 const arView = document.querySelector("#ar-view");
@@ -949,26 +950,7 @@ function currentCloudDistanceProfile(maxDistanceKm) {
   if (digestCandidate?.lowCloudDistanceProfile?.length) {
     return digestCandidate.lowCloudDistanceProfile.filter((sample) => sample.distanceKm <= maxDistanceKm);
   }
-  const target = digestCandidate?.weather?.target;
-  if (!target) return [];
-  const landmarks = [
-    { distanceKm: 0, lowCloudPct: target.lowCloudAtObserverPct },
-    { distanceKm: 10, lowCloudPct: target.low.km10.wedgeMean },
-    { distanceKm: 25, lowCloudPct: target.low.km25.wedgeMean },
-    { distanceKm: 50, lowCloudPct: target.low.km50.wedgeMean },
-  ].filter((sample) => Number.isFinite(sample.lowCloudPct));
-  if (landmarks.length < 2) return landmarks.filter((sample) => sample.distanceKm <= maxDistanceKm);
-  const stepKm = Math.max(0.25, maxDistanceKm / 40);
-  const profile = [];
-  for (let distanceKm = 0; distanceKm < maxDistanceKm; distanceKm += stepKm) {
-    const rightIndex = landmarks.findIndex((sample) => sample.distanceKm >= distanceKm);
-    const right = landmarks[rightIndex < 0 ? landmarks.length - 1 : rightIndex];
-    const left = landmarks[Math.max(0, (rightIndex < 0 ? landmarks.length : rightIndex) - 1)];
-    const fraction = right.distanceKm === left.distanceKm ? 0 : (distanceKm - left.distanceKm) / (right.distanceKm - left.distanceKm);
-    profile.push({ distanceKm, lowCloudPct: left.lowCloudPct + (right.lowCloudPct - left.lowCloudPct) * Math.max(0, Math.min(1, fraction)) });
-  }
-  profile.push({ distanceKm: maxDistanceKm, lowCloudPct: profile[profile.length - 1]?.lowCloudPct ?? landmarks[0].lowCloudPct });
-  return profile;
+  return [];
 }
 
 function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
@@ -989,8 +971,13 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const rayPoints = visibleSamples.map((sample) => `${x(sample.distanceKm).toFixed(1)},${y(sample.rayAltitudeM).toFixed(1)}`).join(" ");
   const grid = [minValue, minValue + range / 2, maxValue].map((value) => `<line x1="${pad.left}" y1="${y(value)}" x2="${width - pad.right}" y2="${y(value)}" stroke="rgba(255,255,255,.09)"/><text x="${pad.left - 4}" y="${y(value) + 3}" fill="#9cabb9" font-size="8" text-anchor="end">${Math.round(value)}m</text>`).join("");
   const cloudProfile = currentCloudDistanceProfile(maxDistanceKm);
+  const digestCandidate = state.observer && loadPreviousWeatherDigest()?.candidates?.find((candidate) => candidate.id === locationId(state.observer));
+  const legacyCloudSummary = !cloudProfile.length && digestCandidate?.weather?.target && !digestCandidate.lowCloudDistanceProfile?.length;
   profileCloudKey.hidden = cloudProfile.length === 0;
   profileCloudCaption.hidden = cloudProfile.length === 0;
+  profileCloudRefresh.hidden = !legacyCloudSummary;
+  const cloudProfileEndKm = cloudProfile.length ? Math.max(...cloudProfile.map((sample) => sample.distanceKm)) : 0;
+  if (cloudProfile.length) profileCloudCaption.querySelector("span").textContent = `Per-distance mean across ±5°—not cumulative. Sampled to ${cloudProfileEndKm} km; lighter is clearer.`;
   const cloudY = height - 29;
   const cloudStrip = cloudProfile.map((sample, index) => {
     const previous = cloudProfile[index - 1];
@@ -999,6 +986,10 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
     const endDistance = next ? (sample.distanceKm + next.distanceKm) / 2 : Math.min(maxDistanceKm, sample.distanceKm + 1.25);
     return `<rect x="${x(startDistance).toFixed(1)}" y="${cloudY}" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="12" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
   }).join("");
+  const unsampledStartKm = Math.min(maxDistanceKm, cloudProfileEndKm + 1.25);
+  const unsampledCloud = cloudProfile.length && unsampledStartKm < maxDistanceKm
+    ? `<rect x="${x(unsampledStartKm).toFixed(1)}" y="${cloudY}" width="${(x(maxDistanceKm) - x(unsampledStartKm)).toFixed(1)}" height="12" fill="rgba(156,171,185,.28)"><title>No cloud-by-distance samples beyond ${cloudProfileEndKm} km</title></rect>`
+    : "";
 
   terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres${cloudProfile.length ? ", with mean low-cloud percentage across the sampled wedge" : ""}">
     ${grid}
@@ -1006,6 +997,7 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
     <polyline points="${terrainPoints}" fill="none" stroke="#8fa6b8" stroke-width="2"/>
     <polyline points="${rayPoints}" fill="none" stroke="#ffcf4a" stroke-width="2.5"/>
     ${cloudStrip}
+    ${unsampledCloud}
     ${cloudProfile.length ? `<text x="${pad.left - 4}" y="${cloudY + 9}" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>` : ""}
     <text x="${pad.left}" y="${height - 5}" fill="#9cabb9" font-size="8">0 km</text>
     <text x="${width - pad.right}" y="${height - 5}" fill="#9cabb9" font-size="8" text-anchor="end">${maxDistanceKm} km</text>
