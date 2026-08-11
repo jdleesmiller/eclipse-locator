@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-cloudprofile2" />
+    <link rel="stylesheet" href="styles.css?v=20260812-visuals3" />
   </head>
   <body>
     <main>
@@ -142,14 +142,14 @@
       <section id="ar-view" class="ar-view" hidden aria-label="Augmented reality eclipse view">
         <video id="ar-video" autoplay muted playsinline></video>
         <div class="ar-shade"></div>
-        <button id="ar-close" class="ar-close" type="button" aria-label="Close AR view">×</button>
+        <button id="ar-close" class="ar-close" type="button" aria-label="Close AR view"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         <div id="ar-stage" class="ar-stage">
           <div id="ar-calibration-target" class="ar-calibration-target" hidden aria-hidden="true"></div>
           <div id="ar-markers"></div>
           <div id="ar-offscreen-arrow" class="ar-offscreen-arrow" hidden><span aria-hidden="true">➤</span><b>Totality</b></div>
         </div>
         <div class="ar-controls">
-          <p class="ar-warning"><strong>Solar safety:</strong> use an appropriate solar filter over the camera lens during partial phases. The phone screen is not eye protection.</p>
+          <p class="ar-warning"><strong>Solar safety:</strong> never look directly at the Sun. Filter the camera lenses during partial phases.</p>
           <p id="ar-status" class="ar-status-waiting">Requesting camera and orientation access…</p>
           <div id="ar-main-controls">
             <button id="ar-open-calibration" class="ar-settings-button" type="button">Refine alignment with the Sun <span>requires a visible Sun and a proper solar filter</span></button>
@@ -191,6 +191,6 @@
     <script src="weather/terrain-analysis.js?v=20260811-weather6"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
     <script src="weather/digest.js?v=20260812-cloudprofile1"></script>
-    <script src="app.js?v=20260812-cloudprofile2"></script>
+    <script src="app.js?v=20260812-visuals3"></script>
   </body>
 </html>

@@ -521,6 +521,14 @@ function eclipseArPhases(eclipse) {
   return phases;
 }
 
+function eclipseIconSvg(obscuration, side, className, clipId = "") {
+  const shift = (1 - Math.max(0, Math.min(1, obscuration))) * 19 * side;
+  const moonX = 16 + shift;
+  const clip = clipId ? `<defs><clipPath id="${clipId}"><circle cx="16" cy="16" r="12"/></clipPath></defs>` : "";
+  const clipAttribute = clipId ? ` clip-path="url(#${clipId})"` : "";
+  return `<svg class="${className}" viewBox="0 0 32 32" aria-hidden="true">${clip}<circle class="eclipse-sun-disc" cx="16" cy="16" r="12"/><circle class="eclipse-moon-disc" cx="${moonX.toFixed(1)}" cy="16" r="12"${clipAttribute}/><circle class="eclipse-disc-outline" cx="16" cy="16" r="13.5"/></svg>`;
+}
+
 function renderPhaseTechnical() {
   if (!state.eclipse) return;
   const kind = eclipseKindName(state.eclipse.kind);
@@ -1077,9 +1085,7 @@ function createArMarkers() {
   state.ar.targets = buildArTargets();
   arMarkers.innerHTML = state.ar.targets.map((target, index) => {
     const classes = ["ar-marker", target.primary ? "primary" : ""].filter(Boolean).join(" ");
-    const shift = (1 - Math.max(0, Math.min(1, target.visualObscuration))) * 19 * target.iconSide;
-    const moonX = 16 + shift;
-    return `<div class="${classes}" data-target="${index}"><svg class="ar-eclipse-icon" viewBox="0 0 32 32" aria-hidden="true"><circle class="ar-sun-disc" cx="16" cy="16" r="12"/><circle class="ar-moon-disc" cx="${moonX.toFixed(1)}" cy="16" r="12"/><circle class="ar-eclipse-outline" cx="16" cy="16" r="13.5"/></svg><div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel}</small></div></div>`;
+    return `<div class="${classes}" data-target="${index}">${eclipseIconSvg(target.visualObscuration, target.iconSide, "ar-eclipse-icon")}<div class="ar-marker-label"><b>${target.label}</b><small>${target.timeLabel}</small></div></div>`;
   }).join("");
 }
 
@@ -1478,25 +1484,27 @@ function renderSightline() {
 
   L.polygon([origin, left, right], { color: "#f7a928", weight: 1, opacity: 0.75, fillColor: "#ffcf4a", fillOpacity: 0.18, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, arrowBase], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
+  const arrowUnderlayLeft = destinationPoint(state.observer, state.azimuth - 0.9, MAX_DISTANCE_KM - 4.6);
+  const arrowUnderlayRight = destinationPoint(state.observer, state.azimuth + 0.9, MAX_DISTANCE_KM - 4.6);
+  L.polygon([end, arrowUnderlayLeft, arrowUnderlayRight], { stroke: false, fillColor: "#fff", fillOpacity: 0.9, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, arrowBase], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
   const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, MAX_DISTANCE_KM - 4);
   const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, MAX_DISTANCE_KM - 4);
   L.polygon([end, arrowLeft, arrowRight], { stroke: false, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
 
-  const symbolDistanceKm = 35;
+  const symbolDistanceKm = 45;
   const kind = eclipseKindName(state.eclipse?.kind);
-  const centreSymbol = kind === "partial" ? "◑" : '<i aria-hidden="true"></i>';
   const symbols = [
-    { point: destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, symbolDistanceKm), html: "◐", className: "partial" },
-    { point: destinationPoint(state.observer, state.azimuth, symbolDistanceKm), html: centreSymbol, className: kind === "partial" ? "partial" : "central" },
-    { point: destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, symbolDistanceKm), html: "◑", className: "partial" },
+    { point: destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, symbolDistanceKm), obscuration: 0.38, side: -1, className: "partial" },
+    { point: destinationPoint(state.observer, state.azimuth, symbolDistanceKm), obscuration: state.eclipse.obscuration, side: 1, className: kind === "partial" ? "partial" : "central" },
+    { point: destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, symbolDistanceKm), obscuration: 0.38, side: 1, className: "partial" },
   ];
-  for (const symbol of symbols) {
+  symbols.forEach((symbol, index) => {
     L.marker(symbol.point, {
       interactive: false,
-      icon: L.divIcon({ className: "", html: `<div class="eclipse-symbol ${symbol.className}">${symbol.html}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+      icon: L.divIcon({ className: "", html: `<div class="eclipse-symbol ${symbol.className}">${eclipseIconSvg(symbol.obscuration, symbol.side, "map-eclipse-icon", `map-eclipse-clip-${index}`)}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
     }).addTo(sightlineLayer);
-  }
+  });
 }
 
 function updateCalculations({ fit = false } = {}) {

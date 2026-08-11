@@ -147,11 +147,12 @@ try {
   if (!/not cumulative/i.test(await page.locator("#profile-cloud-caption").textContent())) throw new Error("Cloud strip should explicitly say that it is not cumulative");
   if (!await page.locator("#profile-cloud-key").isVisible()) throw new Error("Expected the terrain profile low-cloud legend");
   if (await page.locator(".distance-label").count() !== 0) throw new Error("Distance-ring labels should be removed");
-  if (await page.locator(".eclipse-symbol").count() !== 3) throw new Error("Expected central and partial eclipse sightline symbols");
+  if (await page.locator(".eclipse-symbol .map-eclipse-icon").count() !== 3) throw new Error("Expected matching SVG eclipse sightline symbols");
   await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
   await page.locator("#ar-button").click();
   if ((await page.locator(".ar-marker small").allTextContents()).some((label) => label.includes("°"))) throw new Error("AR labels should show times without angles");
-  if (await page.locator("svg.ar-eclipse-icon").count() !== 3 || await page.locator(".ar-eclipse-icon .ar-sun-disc").count() !== 3) throw new Error("Expected rendered SVG eclipse-phase icons in AR");
+  if (await page.locator("svg.ar-eclipse-icon").count() !== 3 || await page.locator(".ar-eclipse-icon .eclipse-sun-disc").count() !== 3) throw new Error("Expected rendered SVG eclipse-phase icons in AR");
+  if (await page.locator("#ar-close svg").count() !== 1) throw new Error("Expected an SVG close icon in AR");
   await page.screenshot({ path: "test-artifacts/ar.png" });
   await page.locator("#ar-open-calibration").click();
   await page.locator("#ar-filter-check").waitFor({ state: "visible" });
