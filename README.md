@@ -2,7 +2,9 @@
 
 A small, mobile-first map for finding the next solar eclipse visible from a chosen location and exploring the Sun's sightline. The static frontend uses Leaflet, OpenStreetMap, SunCalc, Astronomy Engine and Open-Meteo services with no frontend build step or API keys.
 
-For the 12 August 2026 eclipse it also provides live AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays, plus on-demand cloud-wedge and terrain-horizon comparisons for a seven-site shortlist. Six are drawn from the official Asturias viewing sites; Oviedo's municipal observation site at the summit of Monte Naranco is included as a clearly labelled additional candidate. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
+When a selected eclipse is within the short forecast horizon and the observer is in Spain, the app also provides AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays. Saved viewing locations for that eclipse can be compared on demand using cloud wedges and terrain horizons. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
+
+The current location, time zone and selected eclipse are stored in the URL, so **Share this view** can send a restorable link. Locations that are opened, searched or selected on the map are also saved locally under that eclipse. Each saved location has an optional local-only notes field; neither the shortlist nor its notes are uploaded by the static app.
 
 ## Run locally
 
@@ -25,7 +27,7 @@ To view it on an iPhone on the same Wi-Fi network, find the computer's local IP 
 ## Browser permissions and limitations
 
 - Geolocation requires user permission and, on normal hostnames/IP addresses, a secure HTTPS context. If it fails, search for a place using the key-free Open-Meteo geocoding service. The map does not load until a location is chosen.
-- The next eclipse whose maximum occurs above the local horizon is calculated in the browser. **Explore other eclipses** lists upcoming local events and future total or annular events visible from the selected point.
+- The next eclipse whose maximum occurs above the local horizon is calculated in the browser. **Choose another eclipse** lists upcoming local events and future total or annular events visible from the selected point.
 - Calculated event summaries use the chosen location's time zone when it is available from place search. The sightline time is fixed at the selected eclipse's maximum.
 - The optional AR camera view requires HTTPS and explicit camera and orientation permission. On iOS, permission is requested after tapping **Preview direction in AR**. Compass readings can drift and the browser does not report the camera's exact field of view, so use the optional filtered-Sun calibration rather than treating marker placement as survey-grade.
 - Never look directly at the uneclipsed or partially eclipsed Sun without suitable solar viewing protection. Use an appropriate solar filter over the camera lens during partial phases; the phone screen is not eye protection.
@@ -38,11 +40,9 @@ The repository can be published directly with GitHub Pages because all files are
 
 Local eclipse circumstances are calculated using [Astronomy Engine](https://github.com/cosinekitty/astronomy). Partial, annular and total eclipses are supported. The event maximum is used as the default map sightline and as the primary AR target; for total and annular events the central phase interval is also displayed.
 
-The terrain profile samples 100 points from public AWS Terrain Tiles via the same caching proxy used by the candidate comparison. The first 5 km is sampled about every 91 m; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. Both terrain views use the same observer elevation, nominal 1.7 m eye height and spherical-Earth curvature assumptions, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
+The terrain profile samples 100 points from public AWS Terrain Tiles via the same caching proxy used by saved-location comparison. The first 5 km is sampled about every 91 m; the remaining samples cover 5–60 km. The chart can switch between 5, 20 and 60 km views, each with its own vertical scale. Both terrain views use the same observer elevation, nominal 1.7 m eye height and spherical-Earth curvature assumptions, but not atmospheric refraction, buildings or vegetation. Terrain results are planning estimates rather than a visibility guarantee.
 
-The seven-site weather comparison reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°, using the same terrain source and geometry. The ±0.5° horizon drives clearance and classification; ±5° is context only. It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score.
-
-The six regional shortlist coordinates and site names are pinned from the [official Eclipse Asturias observation-point feed](https://eclipseasturias2026.ficyt.es/puntos_observacion.php?lang=en), checked on 11 August 2026. Monte Naranco uses the likely summit gathering area at 43.384377, −5.8643423, interpreted from the map linked by [Oviedo's municipal shuttle notice](https://www.oviedo.es/de/w/el-ayuntamiento-de-oviedo-habilitar%C3%A1-un-servicio-de-lanzadera-de-autobuses-urbanos-para-subir-al-naranco-el-d%C3%ADa-del-eclipse). The app links to the live official mobility plan because special services and access restrictions may change.
+Saved-location comparison reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°, using the same terrain source and geometry. The ±0.5° horizon drives clearance and classification; ±5° is context only. It samples at 100 m through the first 2 km, 250 m from 2–5 km and 2.5 km farther out. Clearances are classified as comfortable (>5°), acceptable (2–5°), marginal (0–2°) or blocked (<0°), independently of the cloud score. Up to nine saved Spanish locations within 300 km of the current observer can be compared in one request, keeping raster downloads bounded.
 
 Elevation data: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/); the source mosaic uses EU-DEM in Asturias and other documented sources elsewhere.
 

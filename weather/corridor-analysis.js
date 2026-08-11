@@ -9,6 +9,20 @@
   const TARGET_TIME = "2026-08-12T18:27:00.000Z";
   const INTERPOLATION_FRACTION = 27 / 60;
 
+  function forecastWindow(targetTime) {
+    const target = new Date(targetTime);
+    if (Number.isNaN(target.getTime())) throw new Error("forecast target time is invalid");
+    const before = new Date(target);
+    before.setUTCMinutes(0, 0, 0);
+    const after = new Date(before.getTime() + 3600000);
+    return {
+      before: before.toISOString(),
+      after: after.toISOString(),
+      target: target.toISOString(),
+      fractionAfter: (target - before) / 3600000,
+    };
+  }
+
   function destination(origin, bearingDegrees, distanceKm) {
     const radiusKm = 6371.0088;
     const angular = distanceKm / radiusKm;
@@ -52,8 +66,8 @@
     };
   }
 
-  function interpolateValues(before, after) {
-    return before.map((value, index) => value + (after[index] - value) * INTERPOLATION_FRACTION);
+  function interpolateValues(before, after, fractionAfter) {
+    return before.map((value, index) => value + (after[index] - value) * fractionAfter);
   }
 
   function weatherRating(metrics) {
@@ -70,31 +84,32 @@
     })));
   }
 
-  async function analyzeCandidates(candidates, _azimuthDeg, _validTime, onProgress) {
+  async function analyzeCandidates(candidates, targetTime = TARGET_TIME, _validTime, onProgress) {
+    const times = forecastWindow(targetTime);
     const prepared = candidates.map((candidate) => ({ candidate, samples: buildSamples(candidate) }));
     const points = prepared.flatMap((item) => item.samples.map(({ lat, lng }) => ({ lat, lng })));
     onProgress?.(0, candidates.length, "AEMET regional grids");
-    const values = await EclipseWeather.rasterValues(["total", "low"], points, [BEFORE_TIME, AFTER_TIME]);
+    const values = await EclipseWeather.rasterValues(["total", "low"], points, [times.before, times.after]);
     let cursor = 0;
     const results = [];
     for (const { candidate, samples } of prepared) {
       const length = samples.length;
-      const beforeTotal = values[BEFORE_TIME].total.slice(cursor, cursor + length);
-      const beforeLow = values[BEFORE_TIME].low.slice(cursor, cursor + length);
-      const afterTotal = values[AFTER_TIME].total.slice(cursor, cursor + length);
-      const afterLow = values[AFTER_TIME].low.slice(cursor, cursor + length);
+      const beforeTotal = values[times.before].total.slice(cursor, cursor + length);
+      const beforeLow = values[times.before].low.slice(cursor, cursor + length);
+      const afterTotal = values[times.after].total.slice(cursor, cursor + length);
+      const afterLow = values[times.after].low.slice(cursor, cursor + length);
       cursor += length;
       const before = summarizeWeather(beforeTotal, beforeLow, samples);
       const after = summarizeWeather(afterTotal, afterLow, samples);
-      const targetTotal = interpolateValues(beforeTotal, afterTotal);
-      const targetLow = interpolateValues(beforeLow, afterLow);
+      const targetTotal = interpolateValues(beforeTotal, afterTotal, times.fractionAfter);
+      const targetLow = interpolateValues(beforeLow, afterLow, times.fractionAfter);
       const target = summarizeWeather(targetTotal, targetLow, samples);
       const rating = weatherRating(target);
       results.push({
         ...candidate,
         score: rating.score,
         weatherRating: rating.rating,
-        weather: { before, after, target },
+        weather: { before, after, target, times },
         metrics: target,
         debug: { samples: samples.map((sample, index) => ({ ...sample, total18: beforeTotal[index], total19: afterTotal[index], low18: beforeLow[index], low19: afterLow[index], totalTarget: targetTotal[index], lowTarget: targetLow[index] })) },
       });
@@ -105,7 +120,7 @@
 
   window.EclipseWeather = window.EclipseWeather || {};
   Object.assign(window.EclipseWeather, {
-    analyzeCandidates, destination, SAMPLE_SPACING_KM, MAX_DISTANCE_KM, WEDGE_HALF_WIDTH_DEG,
+    analyzeCandidates, destination, forecastWindow, SAMPLE_SPACING_KM, MAX_DISTANCE_KM, WEDGE_HALF_WIDTH_DEG,
     RAY_OFFSETS_DEG, BEFORE_TIME, AFTER_TIME, TARGET_TIME, INTERPOLATION_FRACTION,
   });
 }());

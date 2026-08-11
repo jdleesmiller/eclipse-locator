@@ -14,7 +14,7 @@
   }
 
   function trendAgainst(candidate, previousDigest) {
-    const previous = previousDigest?.candidates?.find((item) => item.name === candidate.name);
+    const previous = previousDigest?.candidates?.find((item) => candidate.id && item.id ? item.id === candidate.id : item.name === candidate.name);
     const currentMetrics = candidateMetrics(candidate);
     const previousMetrics = previous ? candidateMetrics(previous) : null;
     if (!currentMetrics || !previousMetrics) return { previousRunAvailable: false, classification: "unavailable", thresholdPctPoints: TREND_THRESHOLD_PCT };
@@ -50,7 +50,8 @@
     }).sort((a, b) => rank[b.overall.recommendation] - rank[a.overall.recommendation] || b.score - a.score);
   }
 
-  function createDigest({ sun, candidates, warnings = [], includeDebug = false }) {
+  function createDigest({ sun, candidates, targetTime, warnings = [], includeDebug = false }) {
+    const times = candidates[0]?.weather?.times || EclipseWeather.forecastWindow(targetTime);
     return {
       schemaVersion: 2,
       retrievedAt: new Date().toISOString(),
@@ -58,8 +59,8 @@
       dataset: "ama_netcdf total/low cloud cover; Terrarium EU-DEM terrain tiles",
       modelRun: null,
       modelRunNote: "Initialization time is not exposed by the public AEMET services.",
-      validTimes: { before: EclipseWeather.BEFORE_TIME, after: EclipseWeather.AFTER_TIME, target: EclipseWeather.TARGET_TIME },
-      interpolation: { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: EclipseWeather.INTERPOLATION_FRACTION, label: "18:27 approximation; not an AEMET model output time" },
+      validTimes: times,
+      interpolation: { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: times.fractionAfter, label: "Target-time approximation; not an AEMET model output time" },
       sun: {
         azimuthDeg: Number(sun.azimuthDeg.toFixed(2)), elevationDeg: Number(sun.elevationDeg.toFixed(2)),
         calculationEngine: "Astronomy Engine 2.1.19",
@@ -70,9 +71,7 @@
       wedge: { halfWidthDeg: EclipseWeather.WEDGE_HALF_WIDTH_DEG, rayOffsetsDeg: EclipseWeather.RAY_OFFSETS_DEG, nominalRaySpacingDeg: 2, distanceSpacingKm: EclipseWeather.SAMPLE_SPACING_KM },
       terrainSampling: { rayOffsetsDeg: EclipseWeather.TERRAIN_RAY_OFFSETS_DEG, classificationHalfWidthDeg: EclipseWeather.TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG, contextHalfWidthDeg: 5, nearSpacingKm: EclipseWeather.TERRAIN_NEAR_SPACING_KM, maxDistanceKm: 50, eyeHeightM: EclipseWeather.TERRAIN_EYE_HEIGHT_M, earthCurvature: true, atmosphericRefraction: false, safetyMarginDeg: 2 },
       candidates: candidates.map((candidate) => ({
-        name: candidate.name, municipality: candidate.municipality, officialId: candidate.officialId,
-        candidateId: candidate.candidateId, siteStatus: candidate.siteStatus,
-        officialUrl: candidate.officialUrl, lat: candidate.lat, lng: candidate.lng,
+        id: candidate.id, name: candidate.name, notes: candidate.notes || "", lat: candidate.lat, lng: candidate.lng,
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
         weather: candidate.weather,
@@ -87,14 +86,15 @@
   function digestMarkdown(digest) {
     const lines = [
       "# Eclipse weather digest",
-      `Target: 12 Aug 2026 18:27 UTC (interpolated approximation between AEMET 18:00 and 19:00 grids)`,
+      `Target: ${digest.validTimes.target} (interpolated approximation between AEMET ${digest.validTimes.before} and ${digest.validTimes.after} grids)`,
       `Sun: ${digest.sun.azimuthDeg}° az / ${digest.sun.elevationDeg}° alt · wedge ±${digest.wedge.halfWidthDeg}°`, "",
     ];
     for (const candidate of digest.candidates) {
       const target = candidate.weather.target;
       const terrain = candidate.terrain;
       lines.push(
-        `## ${candidate.name}${candidate.municipality ? ` (${candidate.municipality})` : ""}`,
+        `## ${candidate.name}`,
+        ...(candidate.notes ? [`Notes: ${candidate.notes}`] : []),
         `Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`,
         `Terrain: ${terrain.classification}; centre ${terrain.centreRayHorizonDeg}°, ±0.25° max ${terrain.within025DegMaxAngleDeg}°, ±0.5° max ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°; ±5° context ${terrain.contextWedgeMaxAngleDeg}°.`,
         `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",

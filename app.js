@@ -7,7 +7,12 @@ const TERRAIN_SAMPLE_COUNT = 100;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
 const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
 const WEATHER_DIGEST_STORAGE_KEY = "eclipse-locator-weather-digest-v2";
-const TEST_MODE = new URLSearchParams(window.location.search).get("test") === "1";
+const SAVED_LOCATIONS_STORAGE_KEY = "eclipse-locator-saved-locations-v1";
+const INITIAL_URL_PARAMS = new URLSearchParams(window.location.search);
+const TEST_MODE = INITIAL_URL_PARAMS.get("test") === "1";
+const SPAIN_WEATHER_BOUNDS = { south: 35, north: 44.5, west: -10, east: 4.5 };
+const WEATHER_PAST_GRACE_MS = 3 * 3600000;
+const WEATHER_FUTURE_HORIZON_MS = 72 * 3600000;
 const CALIBRATION_POINTS = [
   { name: "centre", x: 0.5, y: 0.5 },
   { name: "left target", x: 0.2, y: 0.5 },
@@ -110,6 +115,9 @@ const weatherResults = document.querySelector("#weather-results");
 const weatherDigest = document.querySelector("#weather-digest");
 const weatherDigestText = document.querySelector("#weather-digest-text");
 const weatherDebugToggle = document.querySelector("#weather-debug");
+const savedLocationList = document.querySelector("#saved-location-list");
+const savedLocationCount = document.querySelector("#saved-location-count");
+const shareStatus = document.querySelector("#share-status");
 
 function destinationPoint(origin, bearingDegrees, distanceKm) {
   const earthRadiusKm = 6371.0088;
@@ -145,6 +153,60 @@ function normalizeAngle(degrees) {
 
 function signedAngleDifference(target, current) {
   return ((target - current + 540) % 360) - 180;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+}
+
+function eclipseStorageKey(eclipse = state.eclipse) {
+  return eclipse ? eventDate(eclipse.peak).toISOString().slice(0, 10) : "";
+}
+
+function locationId(location) {
+  return `${Number(location.lat).toFixed(5)},${Number(location.lng).toFixed(5)}`;
+}
+
+function loadSavedLocationGroups() {
+  try {
+    const groups = JSON.parse(localStorage.getItem(SAVED_LOCATIONS_STORAGE_KEY) || "{}");
+    return groups && typeof groups === "object" && !Array.isArray(groups) ? groups : {};
+  } catch {
+    return {};
+  }
+}
+
+function savedLocationsForCurrentEclipse() {
+  const locations = loadSavedLocationGroups()[eclipseStorageKey()];
+  return Array.isArray(locations) ? locations : [];
+}
+
+function storeSavedLocationsForCurrentEclipse(locations) {
+  const key = eclipseStorageKey();
+  if (!key) return;
+  const groups = loadSavedLocationGroups();
+  groups[key] = locations.slice(0, 30);
+  try { localStorage.setItem(SAVED_LOCATIONS_STORAGE_KEY, JSON.stringify(groups)); } catch { /* optional local feature */ }
+}
+
+function savedCurrentLocation() {
+  if (!state.observer || !state.eclipse) return null;
+  const id = locationId(state.observer);
+  return savedLocationsForCurrentEclipse().find((location) => location.id === id) || null;
+}
+
+function updateUrlState() {
+  if (!state.observer || !state.eclipse) return;
+  const params = new URLSearchParams();
+  for (const key of ["test", "weatherProxy"]) if (INITIAL_URL_PARAMS.has(key)) params.set(key, INITIAL_URL_PARAMS.get(key));
+  params.set("lat", state.observer.lat.toFixed(6));
+  params.set("lng", state.observer.lng.toFixed(6));
+  params.set("name", state.locationName);
+  params.set("tz", state.locationTimezone);
+  params.set("eclipse", eventDate(state.eclipse.peak).toISOString());
+  const note = savedCurrentLocation()?.notes?.trim();
+  if (note) params.set("note", note);
+  history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
 }
 
 function sunPositionAt(date) {
@@ -187,6 +249,91 @@ function formatLocationTime(date, includeDate = false, includeSeconds = false) {
     timeZone: state.locationTimezone,
     timeZoneName: includeDate ? "short" : undefined,
   }).format(date);
+}
+
+function formatUtcHour(iso) {
+  return new Date(iso).toISOString().slice(11, 16);
+}
+
+function inSpainWeatherBounds(location) {
+  return location && location.lat >= SPAIN_WEATHER_BOUNDS.south && location.lat <= SPAIN_WEATHER_BOUNDS.north
+    && location.lng >= SPAIN_WEATHER_BOUNDS.west && location.lng <= SPAIN_WEATHER_BOUNDS.east;
+}
+
+function rememberCurrentLocation(seedNote) {
+  if (!state.observer || !state.eclipse) return;
+  const locations = savedLocationsForCurrentEclipse();
+  const id = locationId(state.observer);
+  const existingIndex = locations.findIndex((location) => location.id === id);
+  const existing = existingIndex >= 0 ? locations[existingIndex] : null;
+  const location = {
+    id,
+    name: state.locationName,
+    lat: state.observer.lat,
+    lng: state.observer.lng,
+    timezone: state.locationTimezone,
+    notes: seedNote !== undefined ? seedNote : existing?.notes || "",
+    updatedAt: new Date().toISOString(),
+  };
+  if (existingIndex >= 0) locations.splice(existingIndex, 1, location);
+  else locations.unshift(location);
+  storeSavedLocationsForCurrentEclipse(locations);
+  renderSavedLocations();
+  state.weather.results = null;
+  state.weather.digest = null;
+  weatherResults.replaceChildren();
+  weatherDigest.hidden = true;
+  updateUrlState();
+}
+
+function renderSavedLocations() {
+  if (!state.eclipse) return;
+  const locations = savedLocationsForCurrentEclipse();
+  savedLocationCount.textContent = `${locations.length} saved`;
+  savedLocationList.replaceChildren();
+  for (const location of locations) {
+    const item = document.createElement("article");
+    item.className = "saved-location";
+    const header = document.createElement("div");
+    header.className = "saved-location-header";
+    const name = document.createElement("strong");
+    name.textContent = location.name;
+    const viewButton = document.createElement("button");
+    viewButton.type = "button";
+    viewButton.className = "secondary";
+    viewButton.textContent = "View";
+    viewButton.addEventListener("click", () => activateLocation(location, { eclipsePeak: eventDate(state.eclipse.peak).toISOString() }));
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "secondary";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", () => {
+      storeSavedLocationsForCurrentEclipse(locations.filter((candidate) => candidate.id !== location.id));
+      renderSavedLocations();
+      if (location.id === locationId(state.observer)) updateUrlState();
+      state.weather.results = null;
+      weatherResults.replaceChildren();
+      weatherDigest.hidden = true;
+    });
+    header.append(name, viewButton, removeButton);
+    const notes = document.createElement("textarea");
+    notes.placeholder = "Notes about access, transport, facilities…";
+    notes.setAttribute("aria-label", `Notes for ${location.name}`);
+    notes.value = location.notes || "";
+    notes.addEventListener("change", () => {
+      const latest = savedLocationsForCurrentEclipse();
+      const match = latest.find((candidate) => candidate.id === location.id);
+      if (!match) return;
+      match.notes = notes.value.trim();
+      match.updatedAt = new Date().toISOString();
+      storeSavedLocationsForCurrentEclipse(latest);
+      if (location.id === locationId(state.observer)) updateUrlState();
+    });
+    const coordinates = document.createElement("small");
+    coordinates.textContent = `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
+    item.append(header, notes, coordinates);
+    savedLocationList.append(item);
+  }
 }
 
 function nextVisibleEclipse(startDate, centralOnly = false) {
@@ -232,11 +379,30 @@ function selectEclipse(eclipse, fit = true) {
   eventTitle.textContent = state.locationName;
   arOffscreenLabel.textContent = kind === "partial" ? "Maximum eclipse" : kind === "total" ? "Totality" : "Annularity";
   updateCalculations({ fit });
+  updateWeatherTimeOptions();
   refreshWeatherAvailability();
+  rememberCurrentLocation();
 }
 
 function weatherApplies() {
-  return state.viewingDate instanceof Date && state.viewingDate.toISOString().slice(0, 10) === "2026-08-12";
+  if (!(state.viewingDate instanceof Date) || !inSpainWeatherBounds(state.observer)) return false;
+  if (TEST_MODE) return true;
+  const delta = state.viewingDate.getTime() - Date.now();
+  return delta >= -WEATHER_PAST_GRACE_MS && delta <= WEATHER_FUTURE_HORIZON_MS;
+}
+
+function updateWeatherTimeOptions() {
+  if (!(state.viewingDate instanceof Date)) return;
+  const windowTimes = EclipseWeather.forecastWindow(state.viewingDate);
+  const before = new Date(windowTimes.before);
+  const options = Array.from({ length: 5 }, (_, index) => new Date(before.getTime() + (index - 1) * 3600000));
+  weatherTimeSelect.replaceChildren(...options.map((date) => {
+    const option = document.createElement("option");
+    option.value = date.toISOString();
+    option.textContent = `${formatUtcHour(option.value)} UTC · ${formatLocationTime(date)}`;
+    option.selected = date.toISOString() === windowTimes.before;
+    return option;
+  }));
 }
 
 function updateWeatherOverlay() {
@@ -254,12 +420,11 @@ function updateWeatherOverlay() {
     none: "Cloud overlay hidden.",
   };
   const minutesFromEclipse = Math.round((state.viewingDate - new Date(validTime)) / 60000);
-  weatherLayerNote.textContent = `${labels[kind]} Valid ${validTime.slice(11, 16)} UTC (${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" }).format(new Date(validTime))} CEST), ${Math.abs(minutesFromEclipse)} minutes ${minutesFromEclipse >= 0 ? "before" : "after"} maximum.`;
+  weatherLayerNote.textContent = `${labels[kind]} Valid ${formatUtcHour(validTime)} UTC (${formatLocationTime(new Date(validTime))} locally), ${Math.abs(minutesFromEclipse)} minutes ${minutesFromEclipse >= 0 ? "before" : "after"} maximum.`;
   weatherLegend.hidden = kind === "none";
-  if (kind !== "none") {
-    const legendParams = new URLSearchParams({ REQUEST: "GetLegendGraphic", VERSION: "1.0.0", FORMAT: "image/png", WIDTH: "20", HEIGHT: "20", LAYER: EclipseWeather.LAYERS[kind].name });
-    weatherLegend.src = `${EclipseWeather.WMS_URL}?${legendParams}`;
-  }
+  weatherLegend.classList.toggle("base", kind === "base");
+  const legendLabels = kind === "base" ? ["Low", "", "", "", "High"] : ["0%", "25%", "50%", "75%", "100%"];
+  weatherLegend.querySelectorAll(".weather-legend-labels span").forEach((label, index) => { label.textContent = legendLabels[index]; });
   if (kind !== "none") {
     const retryingTiles = new Set();
     let failedTiles = 0;
@@ -301,22 +466,25 @@ function renderWeatherResults(results) {
     const terrain = result.terrain;
     const trend = result.trend.classification;
     const trendLabel = trend === "unavailable" ? "no previous digest" : trend;
-    const placeLabel = result.municipality ? `${result.name} · ${result.municipality}` : result.name;
-    const sourceLabel = result.sourceLabel || "Official site details";
-    const siteStatus = result.siteStatus ? `<p><b>Status:</b> ${result.siteStatus}</p>` : "";
-    const officialSiteDetails = result.officialUrl ? `<details class="site-access-detail"><summary>Viewing site and transport</summary>${siteStatus}<p>${result.accessibility}</p><p><b>From Gijón:</b> ${result.transportFromGijon}</p><p><a href="${result.officialUrl}" target="_blank" rel="noreferrer">${sourceLabel}</a> · <a href="${window.ECLIPSE_CANDIDATE_SOURCE.mobilityUrl}" target="_blank" rel="noreferrer">live mobility plan</a></p></details>` : "";
-    item.innerHTML = `<button class="weather-result-main" type="button"><strong>${placeLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
-      <small><b>18:27 estimate:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
-      ${officialSiteDetails}
+    const placeLabel = result.name;
+    const safePlaceLabel = escapeHtml(placeLabel);
+    const times = result.weather.times;
+    const targetLabel = `${formatUtcHour(times.target)} estimate`;
+    const beforeLabel = formatUtcHour(times.before);
+    const afterLabel = formatUtcHour(times.after);
+    const notesDetail = result.notes ? `<details class="site-access-detail"><summary>Location notes</summary><p>${escapeHtml(result.notes)}</p></details>` : "";
+    item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
+      <small><b>${targetLabel}:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+      ${notesDetail}
       <details><summary>Hourly and wedge details</summary><div class="weather-detail-grid">
-        <span></span><b>18:00</b><b>18:27*</b><b>19:00</b>
+        <span></span><b>${beforeLabel}</b><b>${formatUtcHour(times.target)}*</b><b>${afterLabel}</b>
         <span>Low here</span><span>${result.weather.before.lowCloudAtObserverPct}%</span><span>${target.lowCloudAtObserverPct}%</span><span>${result.weather.after.lowCloudAtObserverPct}%</span>
         <span>Low 10 km wedge</span><span>${result.weather.before.low.km10.wedgeMean}%</span><span>${target.low.km10.wedgeMean}%</span><span>${result.weather.after.low.km10.wedgeMean}%</span>
         <span>Low 25 km wedge</span><span>${result.weather.before.low.km25.wedgeMean}%</span><span>${target.low.km25.wedgeMean}%</span><span>${result.weather.after.low.km25.wedgeMean}%</span>
         <span>Low 50 km wedge</span><span>${result.weather.before.low.km50.wedgeMean}%</span><span>${target.low.km50.wedgeMean}%</span><span>${result.weather.after.low.km50.wedgeMean}%</span>
-      </div><p><b>18:27 low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>18:27 total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
+      </div><p><b>Target low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>Target total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
       <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${result.debug.samples.length} cloud / ${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ cloud: result.debug.samples, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
-    item.querySelector(".weather-result-main").addEventListener("click", () => activateLocation({ lat: result.lat, lng: result.lng, name: placeLabel, timezone: "Europe/Madrid" }));
+    item.querySelector(".weather-result-main").addEventListener("click", () => activateLocation(result, { eclipsePeak: times.target }));
     weatherResults.append(item);
   }
 }
@@ -330,16 +498,16 @@ function showDigest(format = state.weather.digestFormat) {
 }
 
 function loadPreviousWeatherDigest() {
-  try { return JSON.parse(localStorage.getItem(WEATHER_DIGEST_STORAGE_KEY) || "null"); }
+  try { return JSON.parse(localStorage.getItem(`${WEATHER_DIGEST_STORAGE_KEY}:${eclipseStorageKey()}`) || "null"); }
   catch { return null; }
 }
 
 function buildWeatherDigest(results) {
-  const sun = EclipseWeather.verifySunPosition(new Date(EclipseWeather.TARGET_TIME), state.observer.lat, state.observer.lng);
+  const sun = EclipseWeather.verifySunPosition(state.viewingDate, state.observer.lat, state.observer.lng);
   return EclipseWeather.createDigest({
-    sun, candidates: results, includeDebug: state.weather.debug,
+    sun, candidates: results, targetTime: state.viewingDate, includeDebug: state.weather.debug,
     warnings: [
-      "The 18:27 values are linearly interpolated approximations between the 18:00 and 19:00 AEMET grids.",
+      "Target-time values are linearly interpolated approximations between the surrounding hourly AEMET grids.",
       "Model initialization time is not exposed by AEMET's public services.",
       "Cloud values use nearest model raster cells; terrain excludes buildings, trees and atmospheric refraction.",
     ],
@@ -351,13 +519,18 @@ async function analyzeWeather() {
   button.disabled = true;
   weatherResults.replaceChildren();
   weatherDigest.hidden = true;
-  weatherStatus.textContent = "Loading 18:00 and 19:00 cloud grids for seven-ray wedges…";
+  const forecastTimes = EclipseWeather.forecastWindow(state.viewingDate);
+  weatherStatus.textContent = `Loading ${formatUtcHour(forecastTimes.before)} and ${formatUtcHour(forecastTimes.after)} UTC cloud grids for seven-ray wedges…`;
   try {
-    const candidates = window.ECLIPSE_CANDIDATES.map((candidate) => {
-      const sun = EclipseWeather.solarPosition(new Date(EclipseWeather.TARGET_TIME), candidate.lat, candidate.lng);
+    const candidates = savedLocationsForCurrentEclipse().filter((candidate) => inSpainWeatherBounds(candidate)
+      && L.latLng(state.observer).distanceTo(L.latLng(candidate.lat, candidate.lng)) <= 300000);
+    if (!candidates.length) throw new Error("save at least one location in Spain first");
+    if (candidates.length > 9) throw new Error("comparison is limited to 9 saved locations within 300 km at a time");
+    const preparedCandidates = candidates.map((candidate) => {
+      const sun = EclipseWeather.solarPosition(state.viewingDate, candidate.lat, candidate.lng);
       return { ...candidate, azimuthDeg: sun.azimuthDeg, sunElevationDeg: sun.elevationDeg };
     });
-    const cloudResults = await EclipseWeather.analyzeCandidates(candidates, state.azimuth, null, (complete, total, name) => {
+    const cloudResults = await EclipseWeather.analyzeCandidates(preparedCandidates, state.viewingDate, null, (complete, total, name) => {
       weatherStatus.textContent = complete ? `Processed cloud wedge for ${name} (${complete} of ${total})…` : "Downloading four small AEMET regional rasters…";
     });
     weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
@@ -368,10 +541,11 @@ async function analyzeWeather() {
     state.weather.results = results;
     renderWeatherResults(results);
     state.weather.digest = buildWeatherDigest(results);
-    try { localStorage.setItem(WEATHER_DIGEST_STORAGE_KEY, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
+    try { localStorage.setItem(`${WEATHER_DIGEST_STORAGE_KEY}:${eclipseStorageKey()}`, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
     showDigest("markdown");
     weatherDigest.hidden = false;
-    weatherStatus.textContent = `Comparison complete. ${results[0].name}: ${results[0].overall.recommendation}. Tap a site to move the map.`;
+    weatherStatus.textContent = `Comparison refreshed. ${results[0].name}: ${results[0].overall.recommendation}. Tap a location to move the map.`;
+    button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
   } finally {
@@ -439,7 +613,24 @@ function findAndSelectEclipse({ startDate = new Date(), centralOnly = false, fit
   }
 }
 
-function activateLocation(location) {
+function findAndSelectRequestedEclipse(peakValue, fit = true) {
+  const requested = new Date(peakValue);
+  if (Number.isNaN(requested.getTime())) return findAndSelectEclipse({ fit });
+  const startDate = new Date(requested.getTime() - 36 * 3600000);
+  eventKindOutput.textContent = "Calculating eclipse…";
+  try {
+    const eclipse = nextVisibleEclipse(startDate);
+    if (Math.abs(eventDate(eclipse.peak) - requested) > 48 * 3600000) throw new Error("That eclipse is not visible from this location");
+    selectEclipse(eclipse, fit);
+  } catch (error) {
+    eventKindOutput.textContent = "Selected eclipse unavailable here";
+    eventSummaryOutput.textContent = error.message;
+    findAndSelectEclipse({ fit });
+  }
+}
+
+function activateLocation(location, { eclipsePeak, seedNote } = {}) {
+  const currentPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: Number(location.lat), lng: Number(location.lng) };
   state.locationName = location.name || `${state.observer.lat.toFixed(4)}, ${state.observer.lng.toFixed(4)}`;
   state.locationTimezone = location.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -452,7 +643,10 @@ function activateLocation(location) {
   map.setView(state.observer, 9);
   locationGate.hidden = true;
   statusOutput.textContent = `Observer: ${state.locationName} (${state.observer.lat.toFixed(5)}, ${state.observer.lng.toFixed(5)})`;
-  findAndSelectEclipse();
+  const requestedPeak = eclipsePeak || location.eclipsePeak || currentPeak;
+  if (requestedPeak) findAndSelectRequestedEclipse(requestedPeak);
+  else findAndSelectEclipse();
+  if (seedNote !== undefined) rememberCurrentLocation(seedNote);
 }
 
 function loadSavedCalibrations() {
@@ -1030,9 +1224,12 @@ function updateCalculations({ fit = false } = {}) {
 }
 
 function setObserver(latlng, message, fit = false) {
+  const selectedPeak = state.eclipse ? eventDate(state.eclipse.peak).toISOString() : null;
   state.observer = { lat: latlng.lat, lng: latlng.lng };
+  state.locationName = `Custom location ${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
   statusOutput.textContent = `${message} ${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;
-  updateCalculations({ fit });
+  if (selectedPeak) findAndSelectRequestedEclipse(selectedPeak, fit);
+  else findAndSelectEclipse({ fit });
 }
 
 function locateUser(fromGate = false) {
@@ -1121,6 +1318,46 @@ function inspectPoint(latlng) {
     .openOn(map);
 }
 
+function sharedLocationFromUrl() {
+  if (!INITIAL_URL_PARAMS.has("lat") || !INITIAL_URL_PARAMS.has("lng")) return null;
+  const lat = Number(INITIAL_URL_PARAMS.get("lat"));
+  const lng = Number(INITIAL_URL_PARAMS.get("lng"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -85 || lat > 85 || lng < -180 || lng > 180) return null;
+  return {
+    lat,
+    lng,
+    name: INITIAL_URL_PARAMS.get("name") || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+    timezone: INITIAL_URL_PARAMS.get("tz") || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    eclipsePeak: INITIAL_URL_PARAMS.get("eclipse") || undefined,
+    notes: INITIAL_URL_PARAMS.get("note") || undefined,
+  };
+}
+
+async function shareCurrentView() {
+  updateUrlState();
+  const shareData = {
+    title: `${state.locationName} · Eclipse Locator`,
+    text: `${eventKindOutput.textContent} viewed from ${state.locationName}`,
+    url: window.location.href,
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      shareStatus.textContent = "Share sheet opened.";
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(shareData.url);
+    shareStatus.textContent = "Share link copied.";
+  } catch {
+    window.prompt("Copy this share link:", shareData.url);
+    shareStatus.textContent = "Copy the link shown to share this view.";
+  }
+}
+
 document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
 document.querySelector("#gate-locate").addEventListener("click", () => locateUser(true));
 document.querySelector("#place-search-form").addEventListener("submit", async (event) => {
@@ -1188,11 +1425,13 @@ arFov.addEventListener("input", () => {
 });
 document.querySelector("#choose-location-button").addEventListener("click", () => { locationGate.hidden = false; });
 document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
+document.querySelector("#share-button").addEventListener("click", shareCurrentView);
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
 weatherLayerSelect.addEventListener("change", updateWeatherOverlay);
 weatherTimeSelect.addEventListener("change", () => {
   updateWeatherOverlay();
-  weatherStatus.textContent = "Map overlay time changed. Site comparison still uses both 18:00 and 19:00 grids.";
+  const times = EclipseWeather.forecastWindow(state.viewingDate);
+  weatherStatus.textContent = `Map overlay time changed. Comparison still interpolates the ${formatUtcHour(times.before)} and ${formatUtcHour(times.after)} UTC grids.`;
 });
 document.querySelector("#analyze-weather").addEventListener("click", analyzeWeather);
 weatherDebugToggle.addEventListener("change", () => {
@@ -1223,4 +1462,6 @@ document.querySelectorAll(".profile-ranges button").forEach((button) => {
 });
 refreshCalibrationSelect();
 prepareLocationGate();
-if (TEST_MODE) activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });
+const sharedLocation = sharedLocationFromUrl();
+if (sharedLocation) activateLocation(sharedLocation, { eclipsePeak: sharedLocation.eclipsePeak, seedNote: sharedLocation.notes });
+else if (TEST_MODE) activateLocation({ lat: 43.5322, lng: -5.6611, name: "Gijón test location", timezone: "Europe/Madrid" });

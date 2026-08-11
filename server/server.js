@@ -19,6 +19,7 @@ const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || "https://jdlm.in
 const cache = new Map();
 const terrainTileCache = new Map();
 const CACHE_MS = 5 * 60 * 1000;
+const AEMET_BOUNDS = { south: 33.5, north: 46.5, west: -14, east: 6 };
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.has("*") ? "*" : ALLOWED_ORIGINS.has(origin) ? origin : "";
@@ -38,7 +39,7 @@ function parseRequest(url) {
   if (Number.isNaN(date.getTime())) throw new Error("time must be an ISO-8601 forecast valid time");
   const points = (url.searchParams.get("points") || "").split(";").filter(Boolean).map((pair) => {
     const [lat, lng] = pair.split(",").map(Number);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 42.5 || lat > 44.2 || lng < -7.0 || lng > -4.0) throw new Error("points must be inside the Asturias forecast region");
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < AEMET_BOUNDS.south || lat > AEMET_BOUNDS.north || lng < AEMET_BOUNDS.west || lng > AEMET_BOUNDS.east) throw new Error("points must be inside the AEMET Iberian forecast region");
     return { lat, lng };
   });
   if (!points.length || points.length > 30) throw new Error("provide between 1 and 30 points");
@@ -64,7 +65,10 @@ function parseRasterRequest(body) {
   if (!times.length || times.length > 2 || times.some((date) => Number.isNaN(date.getTime()))) throw new Error("times must contain one or two ISO-8601 forecast valid times");
   const points = Array.isArray(body?.points) ? body.points.map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) })) : [];
   if (!points.length || points.length > 1200) throw new Error("provide between 1 and 1200 points");
-  if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < 42.5 || lat > 44.2 || lng < -7 || lng > -4)) throw new Error("points must be inside the Asturias forecast region");
+  if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < AEMET_BOUNDS.south || lat > AEMET_BOUNDS.north || lng < AEMET_BOUNDS.west || lng > AEMET_BOUNDS.east)) throw new Error("points must be inside the AEMET Iberian forecast region");
+  const latitudes = points.map((point) => point.lat);
+  const longitudes = points.map((point) => point.lng);
+  if (Math.max(...latitudes) - Math.min(...latitudes) > 4 || Math.max(...longitudes) - Math.min(...longitudes) > 4) throw new Error("weather comparison locations must be within a four-degree region");
   return { fields: [...new Set(fields)], times: [...new Set(times.map((date) => date.toISOString()))], points };
 }
 
@@ -120,10 +124,10 @@ async function terrainValues(request) {
 async function aemetRaster(field, time, points) {
   const lats = points.map((point) => point.lat);
   const lngs = points.map((point) => point.lng);
-  const south = Math.max(42.5, Math.min(...lats) - 0.075);
-  const north = Math.min(44.2, Math.max(...lats) + 0.075);
-  const west = Math.max(-7, Math.min(...lngs) - 0.075);
-  const east = Math.min(-4, Math.max(...lngs) + 0.075);
+  const south = Math.max(AEMET_BOUNDS.south, Math.min(...lats) - 0.075);
+  const north = Math.min(AEMET_BOUNDS.north, Math.max(...lats) + 0.075);
+  const west = Math.max(AEMET_BOUNDS.west, Math.min(...lngs) - 0.075);
+  const east = Math.min(AEMET_BOUNDS.east, Math.max(...lngs) + 0.075);
   const params = new URLSearchParams({
     service: "WCS", version: "2.0.1", request: "GetCoverage",
     coverageId: FIELD_COVERAGES[field], format: "image/tiff",

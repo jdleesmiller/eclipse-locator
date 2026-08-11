@@ -21,6 +21,15 @@ page.on("pageerror", (error) => failures.push(`page: ${error.message}`));
 try {
   await page.goto("http://localhost:8080/?test=1", { waitUntil: "networkidle" });
   await page.locator("#event-kind").waitFor({ state: "visible" });
+  const urlState = new URL(page.url());
+  if (!urlState.searchParams.get("lat") || !urlState.searchParams.get("lng") || !urlState.searchParams.get("eclipse")) throw new Error("Shareable URL state is incomplete");
+  if (await page.locator(".saved-location").count() !== 1) throw new Error("Expected the loaded location to be saved for this eclipse");
+  if (await page.locator("#weather-legend img").count() !== 0) throw new Error("Expected the local horizontal weather legend, not a remote image");
+  if (await page.locator(".panel-actions > button").count() !== 3) throw new Error("Expected symmetric eclipse, location and sharing actions");
+  const notes = page.locator(".saved-location textarea").first();
+  await notes.fill("Smoke-test viewing note");
+  await notes.press("Tab");
+  if (new URL(page.url()).searchParams.get("note") !== "Smoke-test viewing note") throw new Error("Saved notes were not reflected in the share URL");
   const solarChecks = await page.evaluate(() => ["2026-08-12T18:00:00.000Z", "2026-08-12T18:27:00.000Z", "2026-08-12T19:00:00.000Z"].map((time) => ({ time, ...EclipseWeather.verifySunPosition(new Date(time), 43.5322, -5.6611) })));
   for (const check of solarChecks) {
     // SunCalc is a deliberately lightweight approximation; Astronomy Engine is
@@ -38,16 +47,17 @@ try {
   console.log("Solar checks:", solarChecks.map((check) => `${check.time.slice(11, 16)} ${check.azimuthDeg.toFixed(2)}°/${check.elevationDeg.toFixed(2)}° (max Δ ${check.maximumDifferenceDeg.toFixed(3)}°)`).join("; "));
   await page.locator("#analyze-weather").click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
-  if (await page.locator(".weather-result").count() !== 7) throw new Error("Expected seven weather candidate results");
-  if (await page.locator(".weather-result").filter({ hasText: "Monte Naranco" }).count() !== 1) throw new Error("Expected a Monte Naranco candidate result");
-  await page.locator("#weather-status").filter({ hasText: "Comparison complete" }).waitFor();
+  if (await page.locator(".weather-result").count() !== 1) throw new Error("Expected one result for the initially saved location");
+  await page.locator("#weather-status").filter({ hasText: "Comparison refreshed" }).waitFor();
   await page.locator("#weather-digest").waitFor({ state: "visible" });
   await page.locator("#weather-digest").locator("summary").click();
   await page.locator("#show-json-digest").click();
   const digest = JSON.parse(await page.locator("#weather-digest-text").inputValue());
-  if (digest.validTimes.target !== "2026-08-12T18:27:00.000Z") throw new Error("Digest target time is incorrect");
+  if (!digest.validTimes.target.startsWith("2026-08-12T18:27:")) throw new Error("Digest target time is incorrect");
+  if (digest.validTimes.before !== "2026-08-12T18:00:00.000Z" || digest.validTimes.after !== "2026-08-12T19:00:00.000Z") throw new Error("Digest interpolation window is incorrect");
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
   if (!digest.candidates.every((candidate) => candidate.weather.before && candidate.weather.after && candidate.weather.target && candidate.terrain.classification)) throw new Error("Digest is missing dual-time weather or terrain analysis");
+  if (digest.candidates[0].notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");
   for (const candidate of digest.candidates) {
     const terrain = candidate.terrain;
