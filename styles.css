@@ -126,10 +126,8 @@ button.active { background: #f47d4b; }
 .weather-debug-detail pre { max-height: 240px; overflow: auto; padding: 7px; background: #06111e; white-space: pre-wrap; font: 8px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .weather-debug-toggle { display: flex; align-items: center; gap: 6px; margin-top: 7px; color: var(--muted); font-size: 9px; }
 .weather-debug-toggle input { width: auto; min-width: 0; }
-.weather-digest { margin-top: 10px; color: #b9d8ef; font-size: 11px; }
 .digest-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
 .digest-actions button { min-height: 36px; padding: 5px; font-size: 10px; }
-#weather-digest-text { width: 100%; height: 180px; margin-top: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #06111e; color: #d9e4ec; font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 .weather-source { margin: 8px 0 0; color: var(--muted); font-size: 9px; }
 .weather-source a { color: #a9cce6; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; }
@@ -149,16 +147,17 @@ button.active { background: #f47d4b; }
 .status:empty { display: none; }
 .hint { margin-bottom: 2px; }
 .safety-note { margin: 9px 0 2px; color: #ffe3a0; font-size: 10px; line-height: 1.35; }
-.terrain-profile { height: 112px; margin-top: 8px; overflow: hidden; border-radius: 8px; background: rgba(255,255,255,.04); }
+.terrain-profile { height: 126px; margin-top: 8px; overflow: hidden; border-radius: 8px; background: rgba(255,255,255,.04); }
 .terrain-profile svg { display: block; width: 100%; height: 100%; }
 .profile-ranges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 9px; }
 .profile-ranges button { min-height: 30px; padding: 4px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 10px; }
 .profile-ranges button.active { border-color: var(--accent); background: rgba(255,207,74,.14); color: var(--accent); }
-.profile-key { display: flex; gap: 18px; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.profile-key { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 5px; color: var(--muted); font-size: 10px; }
 .profile-key a { margin-left: auto; color: #a9cce6; }
 .profile-key span::before { content: ""; display: inline-block; width: 13px; height: 3px; margin: 0 5px 2px 0; border-radius: 2px; }
 .terrain-key::before { background: #8fa6b8; }
 .ray-key::before { background: var(--accent); }
+.cloud-key::before { background: linear-gradient(90deg, #fff, #9e19d7, #5d198e); }
 #terrain-result { font-weight: 750; }
 #terrain-result.clear { color: #72d6a0; }
 #terrain-result.concerning { color: #ffd36b; }
@@ -166,6 +165,7 @@ button.active { background: #f47d4b; }
 .terrain-details, .technical-details { color: var(--muted); font-size: 11px; }
 .terrain-details { margin-top: 9px; }
 .terrain-details summary, .technical-details summary { cursor: pointer; color: #b9d8ef; font-weight: 700; }
+.technical-details > summary { color: var(--ink); font-size: 14px; }
 .technical-details .section-heading { margin-top: 12px; }
 .saved-locations-card { margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
 .saved-eclipse-group { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
@@ -174,10 +174,13 @@ button.active { background: #f47d4b; }
 .saved-eclipse-heading button { min-height: 31px; padding: 4px 8px; font-size: 9px; }
 .saved-location-list { display: grid; gap: 7px; margin-top: 9px; }
 .saved-location { padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.04); }
-.saved-location-header { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 6px; }
+.saved-location-header { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 6px; }
+.saved-location-name-cell { min-width: 0; }
+.saved-location-open { width: 100%; min-height: 31px; padding: 4px 7px; background: transparent; color: #b9d8ef; text-align: left; text-decoration: underline; text-decoration-color: rgba(185,216,239,.45); text-underline-offset: 2px; }
 .saved-location-name { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid transparent; background: transparent; color: white; font-size: 12px; font-weight: 700; }
 .saved-location-name:focus { border-color: var(--line); background: #10253a; }
 .saved-location-header button { min-height: 31px; padding: 4px 8px; font-size: 9px; }
+.saved-location-header .saved-location-icon { display: grid; place-items: center; width: 32px; min-height: 32px; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; }
 .saved-location textarea { width: 100%; height: 52px; margin-top: 7px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: #10253a; color: var(--ink); font: 10px/1.35 inherit; resize: vertical; }
 .saved-location small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
 .saved-location-notes { margin-top: 5px; color: var(--muted); font-size: 10px; }
@@ -192,7 +195,7 @@ button.active { background: #f47d4b; }
 .sheet-view[hidden] { display: none; }
 .sheet-header { display: flex; align-items: center; justify-content: space-between; max-width: 620px; margin: 0 auto; }
 .sheet-header h2 { margin: 0; font-size: 25px; }
-.sheet-close { width: 44px; min-height: 44px; border: 1px solid var(--line); border-radius: 50%; background: #162b3e; color: white; font-size: 27px; }
+.sheet-close { display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0 0 3px; border: 1px solid var(--line); border-radius: 50%; background: #162b3e; color: white; font-size: 27px; line-height: 1; }
 .sheet-intro, .sheet-view section, .sheet-note { max-width: 620px; margin-right: auto; margin-left: auto; }
 .sheet-intro { color: var(--muted); }
 .sheet-view section { margin-top: 24px; }
@@ -208,7 +211,8 @@ button.active { background: #f47d4b; }
 
 
 .observer-pin { width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #087dce; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
-.distance-label { color: #563e00; font-size: 10px; font-weight: 800; text-shadow: 0 1px white, 1px 0 white, 0 -1px white, -1px 0 white; }
+.eclipse-symbol { display: grid; place-items: center; width: 22px; height: 22px; color: #fff; font-size: 19px; line-height: 1; text-shadow: 0 1px 4px #071525; filter: drop-shadow(0 1px 3px #071525); }
+.eclipse-symbol.central i { display: block; width: 15px; height: 15px; border: 3px solid #ffcf4a; border-radius: 50%; background: #071525; box-shadow: 0 0 0 2px rgba(255,255,255,.75), 0 0 8px #ffcf4a; }
 .inspect-popup .leaflet-popup-content-wrapper, .inspect-popup .leaflet-popup-tip { background: #0d2235; color: white; }
 .inspect-popup .leaflet-popup-content { margin: 11px 14px; line-height: 1.5; }
 
@@ -257,7 +261,6 @@ button.active { background: #f47d4b; }
 @media (min-width: 760px) {
   #map { inset: 0; }
   .panel { top: 82px; right: 18px; bottom: auto; left: auto; width: 390px; height: auto; max-height: calc(100vh - 100px); border-radius: 18px; }
-  .topbar { right: 420px; }
 }
 
 @media (max-height: 700px) and (max-width: 759px) {

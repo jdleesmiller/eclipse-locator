@@ -37,6 +37,7 @@ const page = await browser.newPage({
   isMobile: true,
   hasTouch: true,
 });
+await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:8080" });
 
 const failures = [];
 page.on("console", (message) => {
@@ -52,6 +53,7 @@ try {
   if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
   if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
+  if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
   await page.locator("#cloud-result").filter({ hasText: "% low" }).waitFor();
   await page.locator("#choose-location-button").click();
@@ -59,6 +61,7 @@ try {
   await page.screenshot({ path: "test-artifacts/opening.png", fullPage: true });
   if (await page.locator(".saved-location").count() !== 1) throw new Error("Expected the loaded location to be saved for this eclipse");
   if (await page.locator("#weather-legend img").count() !== 0) throw new Error("Expected the local horizontal weather legend, not a remote image");
+  await page.getByRole("button", { name: /Rename/ }).first().click();
   const savedName = page.locator(".saved-location-name").first();
   await savedName.fill("Edited smoke-test location");
   await savedName.press("Tab");
@@ -88,9 +91,8 @@ try {
   if (await page.locator(".weather-result").count() !== 1) throw new Error("Expected one result for the initially saved location");
   await page.locator("#weather-status").filter({ hasText: "Comparison refreshed" }).waitFor();
   await page.locator("#weather-digest").waitFor({ state: "visible" });
-  await page.locator("#weather-digest").locator("summary").click();
-  await page.locator("#show-json-digest").click();
-  const digest = JSON.parse(await page.locator("#weather-digest-text").inputValue());
+  await page.locator("#copy-weather-json").click();
+  const digest = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
   if (!digest.validTimes.target.startsWith("2026-08-12T18:27:")) throw new Error("Digest target time is incorrect");
   if (digest.validTimes.before !== "2026-08-12T18:00:00.000Z" || digest.validTimes.after !== "2026-08-12T19:00:00.000Z") throw new Error("Digest interpolation window is incorrect");
   if (digest.wedge.halfWidthDeg !== 5 || digest.wedge.rayOffsetsDeg.length !== 7) throw new Error("Digest wedge configuration is incorrect");
@@ -121,7 +123,13 @@ try {
   if (retryResult.urlCalls !== 2 || retryResult.retryEvents !== 1) throw new Error(`Unexpected weather retry result: ${JSON.stringify(retryResult)}`);
   await page.screenshot({ path: "test-artifacts/planner.png", fullPage: true });
 
-  await page.locator(".saved-location-header button", { hasText: "View" }).first().click();
+  await page.locator(".saved-location-open").first().click();
+  await page.locator("#terrain-result").filter({ hasText: /OK|Concerning|Obstructed/ }).waitFor();
+  await page.locator(".terrain-details summary").click();
+  if (await page.locator("#terrain-profile rect").count() < 1) throw new Error("Expected a distance-based low-cloud strip in the terrain profile");
+  if (!await page.locator("#profile-cloud-key").isVisible()) throw new Error("Expected the terrain profile low-cloud legend");
+  if (await page.locator(".distance-label").count() !== 0) throw new Error("Distance-ring labels should be removed");
+  if (await page.locator(".eclipse-symbol").count() !== 3) throw new Error("Expected central and partial eclipse sightline symbols");
   await page.screenshot({ path: "test-artifacts/main.png", fullPage: true });
   await page.locator("#ar-button").click();
   await page.locator("#ar-open-calibration").click();

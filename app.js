@@ -2,7 +2,6 @@
 
 const MAX_DISTANCE_KM = 60;
 const WEDGE_DEGREES = 4;
-const DISTANCES_KM = [5, 10, 20, 30, 50];
 const TERRAIN_SAMPLE_COUNT = 100;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
 const LAST_LOCATION_STORAGE_KEY = "eclipse-locator-last-location-v1";
@@ -32,7 +31,7 @@ const state = {
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
-  weather: { layer: null, results: null, digest: null, digestFormat: "markdown", debug: false, indicatorRequest: 0 },
+  weather: { layer: null, results: null, digest: null, debug: false, indicatorRequest: 0 },
   ar: {
     active: false,
     stream: null,
@@ -64,7 +63,6 @@ const observerIcon = L.divIcon({ className: "", html: '<div class="observer-pin"
 let map = null;
 let observerMarker = null;
 let sightlineLayer = null;
-let distanceLayer = null;
 let terrainLayer = null;
 let weatherLayer = null;
 let lastLocationChoice = null;
@@ -74,6 +72,7 @@ const elevationOutput = document.querySelector("#elevation");
 const directionOutput = document.querySelector("#direction");
 const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
+const profileCloudKey = document.querySelector("#profile-cloud-key");
 const terrainResult = document.querySelector("#terrain-result");
 const terrainNote = document.querySelector("#terrain-note");
 const arView = document.querySelector("#ar-view");
@@ -114,7 +113,6 @@ const cloudResult = document.querySelector("#cloud-result");
 const weatherStatus = document.querySelector("#weather-status");
 const weatherResults = document.querySelector("#weather-results");
 const weatherDigest = document.querySelector("#weather-digest");
-const weatherDigestText = document.querySelector("#weather-digest-text");
 const weatherDebugToggle = document.querySelector("#weather-debug");
 const savedLocationList = document.querySelector("#saved-location-list");
 const savedLocationCount = document.querySelector("#saved-location-count");
@@ -230,7 +228,6 @@ function initializeMap() {
   }).addTo(map);
   observerMarker = L.marker(state.observer, { icon: observerIcon, draggable: true, zIndexOffset: 1000 }).addTo(map);
   sightlineLayer = L.layerGroup().addTo(map);
-  distanceLayer = L.layerGroup().addTo(map);
   terrainLayer = L.layerGroup().addTo(map);
   observerMarker.on("dragend", (event) => setObserver(event.target.getLatLng(), "Observer moved to"));
   map.on("click", (event) => setObserver(event.latlng, "Viewing point set to"));
@@ -341,35 +338,62 @@ function renderSavedLocations() {
       item.className = "saved-location";
       const header = document.createElement("div");
       header.className = "saved-location-header";
-      const name = document.createElement("input");
-      name.className = "saved-location-name";
-      name.value = location.name;
-      name.setAttribute("aria-label", "Viewing location name");
-      name.addEventListener("change", () => {
+      const openLocation = () => {
+        const comparisonResults = state.weather.results;
+        activateLocation(location, { eclipsePeak: inferredEclipsePeak(groupKey, location) });
+        state.weather.results = comparisonResults;
+      };
+      const nameButton = document.createElement("button");
+      nameButton.type = "button";
+      nameButton.className = "saved-location-open";
+      nameButton.textContent = location.name;
+      nameButton.addEventListener("click", openLocation);
+      const nameInput = document.createElement("input");
+      nameInput.className = "saved-location-name";
+      nameInput.value = location.name;
+      nameInput.setAttribute("aria-label", "Viewing location name");
+      nameInput.hidden = true;
+      const finishNameEdit = (save = true) => {
+        if (nameInput.hidden) return;
         const latest = loadSavedLocationGroups()[groupKey] || [];
         const match = latest.find((candidate) => candidate.id === location.id);
         if (!match) return;
-        match.name = name.value.trim() || `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
-        name.value = match.name;
+        match.name = save ? (nameInput.value.trim() || `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`) : location.name;
+        nameInput.value = match.name;
         location.name = match.name;
+        nameButton.textContent = match.name;
         match.updatedAt = new Date().toISOString();
         storeSavedLocationGroup(groupKey, latest);
+        nameInput.hidden = true;
+        nameButton.hidden = false;
         if (groupKey === eclipseStorageKey() && state.observer && location.id === locationId(state.observer)) {
           state.locationName = match.name;
           eventTitle.textContent = match.name;
           eventSummaryOutput.textContent = match.name;
           updateUrlState();
         }
+      };
+      nameInput.addEventListener("blur", () => finishNameEdit(true));
+      nameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") nameInput.blur();
+        if (event.key === "Escape") finishNameEdit(false);
       });
-      const viewButton = document.createElement("button");
-      viewButton.type = "button";
-      viewButton.className = "secondary";
-      viewButton.textContent = "View";
-      viewButton.addEventListener("click", () => activateLocation(location, { eclipsePeak: inferredEclipsePeak(groupKey, location) }));
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "secondary saved-location-icon";
+      editButton.textContent = "✎";
+      editButton.setAttribute("aria-label", `Rename ${location.name}`);
+      editButton.addEventListener("click", () => {
+        nameButton.hidden = true;
+        nameInput.hidden = false;
+        nameInput.focus();
+        nameInput.select();
+      });
       const removeButton = document.createElement("button");
       removeButton.type = "button";
-      removeButton.className = "secondary";
-      removeButton.textContent = "Remove";
+      removeButton.className = "secondary saved-location-icon";
+      removeButton.textContent = "×";
+      removeButton.setAttribute("aria-label", `Remove ${location.name}`);
       removeButton.addEventListener("click", () => {
         storeSavedLocationGroup(groupKey, locations.filter((candidate) => candidate.id !== location.id));
         renderSavedLocations();
@@ -378,7 +402,10 @@ function renderSavedLocations() {
         weatherResults.replaceChildren();
         weatherDigest.hidden = true;
       });
-      header.append(name, viewButton, removeButton);
+      const nameCell = document.createElement("div");
+      nameCell.className = "saved-location-name-cell";
+      nameCell.append(nameButton, nameInput);
+      header.append(nameCell, editButton, removeButton);
       const notesDetails = document.createElement("details");
       notesDetails.className = "saved-location-notes";
       const notesSummary = document.createElement("summary");
@@ -585,17 +612,25 @@ function renderWeatherResults(results) {
         <span>Low 50 km wedge</span><span>${result.weather.before.low.km50.wedgeMean}%</span><span>${target.low.km50.wedgeMean}%</span><span>${result.weather.after.low.km50.wedgeMean}%</span>
       </div><p><b>Target low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>Target total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
       <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${result.debug.samples.length} cloud / ${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ cloud: result.debug.samples, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
-    item.querySelector(".weather-result-main").addEventListener("click", () => activateLocation(result, { eclipsePeak: times.target }));
+    item.querySelector(".weather-result-main").addEventListener("click", () => {
+      const comparisonResults = state.weather.results;
+      activateLocation(result, { eclipsePeak: times.target });
+      state.weather.results = comparisonResults;
+    });
     weatherResults.append(item);
   }
 }
 
-function showDigest(format = state.weather.digestFormat) {
+async function copyWeatherDigest(format) {
   if (!state.weather.digest) return;
-  state.weather.digestFormat = format;
-  weatherDigestText.value = format === "json" ? JSON.stringify(state.weather.digest, null, 2) : EclipseWeather.digestMarkdown(state.weather.digest);
-  document.querySelector("#show-json-digest").textContent = format === "json" ? "Show Markdown" : "Show JSON";
-  document.querySelector("#copy-weather-digest").textContent = format === "json" ? "Copy JSON" : "Copy Markdown";
+  const text = format === "json" ? JSON.stringify(state.weather.digest, null, 2) : EclipseWeather.digestMarkdown(state.weather.digest);
+  try {
+    await navigator.clipboard.writeText(text);
+    weatherStatus.textContent = `${format === "json" ? "JSON" : "Markdown"} copied.`;
+  } catch {
+    window.prompt(`Copy the ${format === "json" ? "JSON" : "Markdown"} digest:`, text);
+    weatherStatus.textContent = "Copy the digest from the dialog.";
+  }
 }
 
 function loadPreviousWeatherDigest() {
@@ -643,9 +678,8 @@ async function analyzeWeather() {
     renderWeatherResults(results);
     state.weather.digest = buildWeatherDigest(results);
     try { localStorage.setItem(`${WEATHER_DIGEST_STORAGE_KEY}:${eclipseStorageKey()}`, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
-    showDigest("markdown");
     weatherDigest.hidden = false;
-    weatherStatus.textContent = `Comparison refreshed. ${results[0].name}: ${results[0].overall.recommendation}. Tap a location to move the map.`;
+    weatherStatus.textContent = "Comparison refreshed.";
     button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
@@ -816,11 +850,36 @@ function rayAltitudeM(distanceKm, observerElevationM) {
   return EclipseWeather.solarRayAltitudeM(distanceKm, observerElevationM, state.elevation);
 }
 
+function cloudColour(percent) {
+  const stops = percent <= 60
+    ? { from: [255, 255, 255], to: [158, 25, 215], fraction: percent / 60 }
+    : { from: [158, 25, 215], to: [93, 25, 142], fraction: (percent - 60) / 40 };
+  const rgb = stops.from.map((value, index) => Math.round(value + (stops.to[index] - value) * stops.fraction));
+  return `rgb(${rgb.join(",")})`;
+}
+
+function currentCloudDistanceProfile(maxDistanceKm) {
+  if (!state.weather.results || !state.observer) return [];
+  const result = state.weather.results.find((candidate) => candidate.id === locationId(state.observer));
+  if (!result?.debug?.samples) return [];
+  const groups = new Map();
+  for (const sample of result.debug.samples) {
+    if (sample.distanceKm > maxDistanceKm || !Number.isFinite(sample.lowTarget)) continue;
+    const values = groups.get(sample.distanceKm) || [];
+    values.push(sample.lowTarget);
+    groups.set(sample.distanceKm, values);
+  }
+  return [...groups].map(([distanceKm, values]) => ({
+    distanceKm,
+    lowCloudPct: values.reduce((sum, value) => sum + value, 0) / values.length,
+  })).sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
 function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const visibleSamples = samples.filter((sample) => sample.distanceKm <= maxDistanceKm);
   const width = 360;
-  const height = 112;
-  const pad = { top: 9, right: 8, bottom: 18, left: 35 };
+  const height = 126;
+  const pad = { top: 9, right: 8, bottom: 32, left: 35 };
   const values = visibleSamples.flatMap((sample) => [sample.terrainElevationM, sample.rayAltitudeM]);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
@@ -833,12 +892,24 @@ function renderTerrainProfile(samples, maxDistanceKm = state.profileRangeKm) {
   const terrainPoints = visibleSamples.map((sample) => `${x(sample.distanceKm).toFixed(1)},${y(sample.terrainElevationM).toFixed(1)}`).join(" ");
   const rayPoints = visibleSamples.map((sample) => `${x(sample.distanceKm).toFixed(1)},${y(sample.rayAltitudeM).toFixed(1)}`).join(" ");
   const grid = [minValue, minValue + range / 2, maxValue].map((value) => `<line x1="${pad.left}" y1="${y(value)}" x2="${width - pad.right}" y2="${y(value)}" stroke="rgba(255,255,255,.09)"/><text x="${pad.left - 4}" y="${y(value) + 3}" fill="#9cabb9" font-size="8" text-anchor="end">${Math.round(value)}m</text>`).join("");
+  const cloudProfile = currentCloudDistanceProfile(maxDistanceKm);
+  profileCloudKey.hidden = cloudProfile.length === 0;
+  const cloudY = height - 25;
+  const cloudStrip = cloudProfile.map((sample, index) => {
+    const previous = cloudProfile[index - 1];
+    const next = cloudProfile[index + 1];
+    const startDistance = previous ? (previous.distanceKm + sample.distanceKm) / 2 : 0;
+    const endDistance = next ? (sample.distanceKm + next.distanceKm) / 2 : Math.min(maxDistanceKm, sample.distanceKm + 1.25);
+    return `<rect x="${x(startDistance).toFixed(1)}" y="${cloudY}" width="${Math.max(1, x(endDistance) - x(startDistance)).toFixed(1)}" height="8" fill="${cloudColour(sample.lowCloudPct)}"><title>${sample.distanceKm} km: ${Math.round(sample.lowCloudPct)}% mean low cloud across wedge</title></rect>`;
+  }).join("");
 
-  terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres">
+  terrainProfile.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Terrain elevation and solar sightline altitude over ${maxDistanceKm} kilometres${cloudProfile.length ? ", with mean low-cloud percentage across the sampled wedge" : ""}">
     ${grid}
     <polygon points="${pad.left},${height - pad.bottom} ${terrainPoints} ${width - pad.right},${height - pad.bottom}" fill="rgba(143,166,184,.22)"/>
     <polyline points="${terrainPoints}" fill="none" stroke="#8fa6b8" stroke-width="2"/>
     <polyline points="${rayPoints}" fill="none" stroke="#ffcf4a" stroke-width="2.5"/>
+    ${cloudStrip}
+    ${cloudProfile.length ? `<text x="${pad.left - 4}" y="${cloudY + 7}" fill="#9cabb9" font-size="7" text-anchor="end">cloud</text>` : ""}
     <text x="${pad.left}" y="${height - 5}" fill="#9cabb9" font-size="8">0 km</text>
     <text x="${width - pad.right}" y="${height - 5}" fill="#9cabb9" font-size="8" text-anchor="end">${maxDistanceKm} km</text>
   </svg>`;
@@ -850,7 +921,7 @@ async function loadTerrain() {
   state.terrainRequest = controller;
   state.terrainSamples = [];
   terrainLayer.clearLayers();
-  terrainResult.className = "";
+  terrainResult.className = "result-badge";
   terrainResult.textContent = "Loading…";
   terrainNote.textContent = "Sampling at approximately 90 m intervals through the first 5 km…";
   terrainProfile.innerHTML = "";
@@ -879,24 +950,24 @@ async function loadTerrain() {
     const blocked = relevant.filter((sample) => sample.clearanceM < 0);
     if (blocked.length) {
       const first = blocked[0];
-      terrainResult.className = "blocked";
+      terrainResult.className = "result-badge blocked";
       terrainResult.textContent = "Obstructed";
       terrainNote.textContent = `First sampled obstruction at ${first.distanceKm.toFixed(1)} km; terrain is ${Math.round(-first.clearanceM)} m above the solar ray. Minimum clearance: ${Math.round(worst.clearanceM)} m.`;
       for (const sample of blocked) {
         L.circleMarker(sample.location, { radius: 3, color: "#fff", weight: 1, fillColor: "#e64f43", fillOpacity: 0.9, interactive: false }).addTo(terrainLayer);
       }
     } else if (worst.clearanceM < 50) {
-      terrainResult.className = "concerning";
+      terrainResult.className = "result-badge concerning";
       terrainResult.textContent = "Concerning";
       terrainNote.textContent = `The smallest sampled clearance is only ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
     } else {
-      terrainResult.className = "clear";
+      terrainResult.className = "result-badge clear";
       terrainResult.textContent = "OK";
       terrainNote.textContent = `Minimum sampled clearance is ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
     }
   } catch (error) {
     if (error.name === "AbortError") return;
-    terrainResult.className = "";
+    terrainResult.className = "result-badge";
     terrainResult.textContent = "Unavailable";
     terrainNote.textContent = "Terrain could not be loaded. The geometric sightline estimates above still work.";
   } finally {
@@ -1263,7 +1334,6 @@ function captureSunCalibration() {
 
 function renderSightline() {
   sightlineLayer.clearLayers();
-  distanceLayer.clearLayers();
 
   const origin = [state.observer.lat, state.observer.lng];
   const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
@@ -1273,14 +1343,23 @@ function renderSightline() {
   L.polygon([origin, left, right], { color: "#f7a928", weight: 1, opacity: 0.75, fillColor: "#ffcf4a", fillOpacity: 0.18, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, end], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, end], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
+  const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, MAX_DISTANCE_KM - 4);
+  const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, MAX_DISTANCE_KM - 4);
+  L.polygon([end, arrowLeft, arrowRight], { color: "#ed7b21", weight: 1, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
 
-  for (const distanceKm of DISTANCES_KM) {
-    L.circle(origin, { radius: distanceKm * 1000, color: "#354e63", weight: 1, opacity: 0.65, fill: false, interactive: false }).addTo(distanceLayer);
-    const labelPoint = destinationPoint(state.observer, state.azimuth, distanceKm);
-    L.marker(labelPoint, {
+  const symbolDistanceKm = 35;
+  const kind = eclipseKindName(state.eclipse?.kind);
+  const centreSymbol = kind === "partial" ? "◑" : '<i aria-hidden="true"></i>';
+  const symbols = [
+    { point: destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, symbolDistanceKm), html: "◐", className: "partial" },
+    { point: destinationPoint(state.observer, state.azimuth, symbolDistanceKm), html: centreSymbol, className: kind === "partial" ? "partial" : "central" },
+    { point: destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, symbolDistanceKm), html: "◑", className: "partial" },
+  ];
+  for (const symbol of symbols) {
+    L.marker(symbol.point, {
       interactive: false,
-      icon: L.divIcon({ className: "distance-label", html: `${distanceKm} km`, iconSize: [40, 16], iconAnchor: [20, 8] }),
-    }).addTo(distanceLayer);
+      icon: L.divIcon({ className: "", html: `<div class="eclipse-symbol ${symbol.className}">${symbol.html}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+    }).addTo(sightlineLayer);
   }
 }
 
@@ -1525,20 +1604,9 @@ weatherDebugToggle.addEventListener("change", () => {
   if (!state.weather.results) return;
   renderWeatherResults(state.weather.results);
   state.weather.digest = buildWeatherDigest(state.weather.results);
-  showDigest(state.weather.digestFormat);
 });
-document.querySelector("#show-json-digest").addEventListener("click", () => showDigest(state.weather.digestFormat === "json" ? "markdown" : "json"));
-document.querySelector("#copy-weather-digest").addEventListener("click", async () => {
-  const text = weatherDigestText.value;
-  try {
-    await navigator.clipboard.writeText(text);
-    weatherStatus.textContent = `${state.weather.digestFormat === "json" ? "JSON" : "Markdown"} digest copied.`;
-  } catch {
-    weatherDigestText.focus();
-    weatherDigestText.select();
-    weatherStatus.textContent = "Clipboard access was unavailable; the digest text is selected for copying.";
-  }
-});
+document.querySelector("#copy-weather-digest").addEventListener("click", () => copyWeatherDigest("markdown"));
+document.querySelector("#copy-weather-json").addEventListener("click", () => copyWeatherDigest("json"));
 document.querySelectorAll(".profile-ranges button").forEach((button) => {
   button.addEventListener("click", () => {
     state.profileRangeKm = Number(button.dataset.range);
