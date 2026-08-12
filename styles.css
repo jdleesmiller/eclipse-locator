@@ -33,7 +33,8 @@ button, input { font: inherit; }
 .gate-status:empty { display: none; }
 .gate-attribution { margin-bottom: 0; font-size: 10px !important; }
 .gate-attribution a { color: #a9cce6; }
-.install-app-button { width: 100%; min-height: 38px; margin-top: 12px; }
+.install-app-footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); text-align: center; }
+button.install-app-button { color: var(--muted); font-size: 10px; font-weight: 600; text-decoration-color: rgba(156,171,185,.45); }
 
 #map { position: absolute; inset: 0 0 42vh; background: #ced8df; }
 .leaflet-control-zoom { margin-top: 88px !important; }
@@ -112,6 +113,7 @@ button { min-height: 43px; border: 0; border-radius: 10px; background: var(--acc
 button.secondary { border: 1px solid var(--line); background: #162b3e; color: var(--ink); }
 button.active { background: #f47d4b; }
 button.inline-link { display: inline; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #b9d8ef; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
+.install-app-footer button.install-app-button { color: var(--muted); font-size: 10px; font-weight: 600; text-decoration-color: rgba(156,171,185,.45); }
 
 .terrain-card, .sightline-card, .technical-details { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
 .weather-card { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
@@ -217,6 +219,7 @@ button.inline-link { display: inline; min-height: 0; padding: 0; border: 0; bord
 .share-status:not(:empty) { position: fixed; z-index: 900; top: calc(66px + env(safe-area-inset-top)); right: 14px; max-width: 180px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(7,21,37,.94); box-shadow: 0 5px 18px rgba(0,0,0,.3); }
 
 .sheet-view { position: fixed; z-index: 1800; inset: 0; overflow-y: auto; padding: calc(18px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)); background: #071525; }
+.install-guide { z-index: 3200; }
 .sheet-view[hidden] { display: none; }
 .sheet-header { display: flex; align-items: center; justify-content: space-between; max-width: 620px; margin: 0 auto; }
 .sheet-header h2 { margin: 0; font-size: 25px; }

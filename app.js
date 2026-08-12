@@ -1779,15 +1779,6 @@ function renderInstallInstructions() {
   const { ios, safari } = installPlatform();
   if (isStandaloneApp()) {
     installInstructions.innerHTML = "<h3>Already installed</h3><p>Eclipse Locator is currently running as a standalone web app.</p>";
-  } else if (deferredInstallPrompt) {
-    installInstructions.innerHTML = '<h3>Install Eclipse Locator</h3><p>Your browser can install this site as an app.</p><button id="confirm-install-app" type="button">Install app</button>';
-    document.querySelector("#confirm-install-app").addEventListener("click", async () => {
-      const prompt = deferredInstallPrompt;
-      deferredInstallPrompt = null;
-      await prompt.prompt();
-      await prompt.userChoice;
-      renderInstallInstructions();
-    });
   } else if (ios) {
     installInstructions.innerHTML = `<h3>Install from Safari</h3><ol><li>${safari ? "Tap Safari’s Share button." : "Open this page in Safari, then tap Share."}</li><li>Choose <b>Add to Home Screen</b>.</li><li>Turn on <b>Open as Web App</b>.</li><li>Tap <b>Add</b>.</li></ol>`;
   } else {
@@ -1795,7 +1786,14 @@ function renderInstallInstructions() {
   }
 }
 
-function openInstallGuide() {
+async function openInstallGuide() {
+  if (deferredInstallPrompt && !isStandaloneApp()) {
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice.outcome === "accepted") return;
+  }
   renderInstallInstructions();
   installGuide.hidden = false;
 }

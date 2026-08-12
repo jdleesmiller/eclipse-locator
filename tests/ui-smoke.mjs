@@ -54,13 +54,27 @@ try {
   if (!urlState.searchParams.get("lat") || !urlState.searchParams.get("lng") || !urlState.searchParams.get("eclipse")) throw new Error("Shareable URL state is incomplete");
   if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
   if ((await page.locator('link[rel="manifest"]').getAttribute("href")) !== "manifest.webmanifest") throw new Error("Web app manifest is not linked");
+  if ((await page.locator('meta[name="mobile-web-app-capable"]').getAttribute("content")) !== "yes") throw new Error("Modern mobile web app metadata is missing");
   const manifest = await (await page.request.get("http://localhost:8080/manifest.webmanifest")).json();
   if (manifest.display !== "standalone" || !manifest.icons?.some((icon) => icon.sizes === "192x192") || !manifest.icons?.some((icon) => icon.sizes === "512x512")) throw new Error(`Manifest is incomplete: ${JSON.stringify(manifest)}`);
   await page.evaluate(() => openInstallGuide());
   await page.locator("#install-guide").waitFor({ state: "visible" });
+  const installStacking = await page.evaluate(() => ({
+    guide: Number(getComputedStyle(document.querySelector("#install-guide")).zIndex),
+    gate: Number(getComputedStyle(document.querySelector("#location-gate")).zIndex),
+  }));
+  if (installStacking.guide <= installStacking.gate) throw new Error("Install guide should appear above the opening screen");
   if (!/Install from your browser|Install Eclipse Locator|Already installed/.test(await page.locator("#install-instructions").textContent())) throw new Error("Expected platform-aware installation instructions");
   if (!/internet connection/i.test(await page.locator("#install-guide .sheet-note").textContent())) throw new Error("Install guide should explain online requirements");
   await page.locator("#close-install-guide").click();
+  await page.evaluate(() => { document.querySelector("#location-gate").hidden = false; });
+  const installFooter = await page.evaluate(() => {
+    const button = document.querySelector("#install-app").getBoundingClientRect();
+    const card = document.querySelector(".gate-card").getBoundingClientRect();
+    return { nearBottom: card.bottom - button.bottom < 35, fontSize: Number.parseFloat(getComputedStyle(document.querySelector("#install-app")).fontSize) };
+  });
+  if (!installFooter.nearBottom || installFooter.fontSize > 11) throw new Error(`Install action should be a de-emphasized footer: ${JSON.stringify(installFooter)}`);
+  await page.evaluate(() => { document.querySelector("#location-gate").hidden = true; });
   if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
   await page.locator("#share-button").click();
