@@ -46,11 +46,21 @@ page.on("console", (message) => {
 page.on("pageerror", (error) => failures.push(`page: ${error.message}`));
 
 try {
-  await page.goto("http://localhost:8080/?test=1", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:8080/?test=1&lat=43.532200&lng=-5.661100&name=Gij%C3%B3n%20test%20location&tz=Europe%2FMadrid&eclipse=2026-08-12T18%3A27%3A00.000Z", { waitUntil: "networkidle" });
   await page.locator("#event-kind").waitFor({ state: "visible" });
+  await page.locator("#event-kind").filter({ hasText: "Total solar eclipse" }).waitFor();
+  await page.evaluate(() => { state.deviceLocation = { lat: 43.5322, lng: -5.6611 }; state.deviceLocationAccuracyM = 10; refreshObserverContext(); });
   const urlState = new URL(page.url());
   if (!urlState.searchParams.get("lat") || !urlState.searchParams.get("lng") || !urlState.searchParams.get("eclipse")) throw new Error("Shareable URL state is incomplete");
   if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
+  if ((await page.locator('link[rel="manifest"]').getAttribute("href")) !== "manifest.webmanifest") throw new Error("Web app manifest is not linked");
+  const manifest = await (await page.request.get("http://localhost:8080/manifest.webmanifest")).json();
+  if (manifest.display !== "standalone" || !manifest.icons?.some((icon) => icon.sizes === "192x192") || !manifest.icons?.some((icon) => icon.sizes === "512x512")) throw new Error(`Manifest is incomplete: ${JSON.stringify(manifest)}`);
+  await page.evaluate(() => openInstallGuide());
+  await page.locator("#install-guide").waitFor({ state: "visible" });
+  if (!/Install from your browser|Install Eclipse Locator|Already installed/.test(await page.locator("#install-instructions").textContent())) throw new Error("Expected platform-aware installation instructions");
+  if (!/internet connection/i.test(await page.locator("#install-guide .sheet-note").textContent())) throw new Error("Install guide should explain online requirements");
+  await page.locator("#close-install-guide").click();
   if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
   await page.locator("#share-button").click();

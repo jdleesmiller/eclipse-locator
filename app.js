@@ -72,6 +72,7 @@ let terrainLayer = null;
 let weatherLayer = null;
 let lastLocationChoice = null;
 let shareStatusTimer = null;
+let deferredInstallPrompt = null;
 
 const azimuthOutput = document.querySelector("#azimuth");
 const elevationOutput = document.querySelector("#elevation");
@@ -105,6 +106,8 @@ const arLocationNote = document.querySelector("#ar-location-note");
 const arUseCurrentLocation = document.querySelector("#ar-use-current-location");
 const arLocationMessage = document.querySelector("#ar-location-message");
 const eclipseExplorer = document.querySelector("#eclipse-explorer");
+const installGuide = document.querySelector("#install-guide");
+const installInstructions = document.querySelector("#install-instructions");
 const locationGate = document.querySelector("#location-gate");
 const panel = document.querySelector(".panel");
 const gateStatus = document.querySelector("#gate-status");
@@ -1761,6 +1764,42 @@ function prepareLocationGate() {
   lastLocationButton.addEventListener("click", () => { if (lastLocationChoice) activateLocation(lastLocationChoice); });
 }
 
+function isStandaloneApp() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function installPlatform() {
+  const ua = navigator.userAgent;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  return { ios, safari };
+}
+
+function renderInstallInstructions() {
+  const { ios, safari } = installPlatform();
+  if (isStandaloneApp()) {
+    installInstructions.innerHTML = "<h3>Already installed</h3><p>Eclipse Locator is currently running as a standalone web app.</p>";
+  } else if (deferredInstallPrompt) {
+    installInstructions.innerHTML = '<h3>Install Eclipse Locator</h3><p>Your browser can install this site as an app.</p><button id="confirm-install-app" type="button">Install app</button>';
+    document.querySelector("#confirm-install-app").addEventListener("click", async () => {
+      const prompt = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      await prompt.prompt();
+      await prompt.userChoice;
+      renderInstallInstructions();
+    });
+  } else if (ios) {
+    installInstructions.innerHTML = `<h3>Install from Safari</h3><ol><li>${safari ? "Tap Safari’s Share button." : "Open this page in Safari, then tap Share."}</li><li>Choose <b>Add to Home Screen</b>.</li><li>Turn on <b>Open as Web App</b>.</li><li>Tap <b>Add</b>.</li></ol>`;
+  } else {
+    installInstructions.innerHTML = "<h3>Install from your browser</h3><p>Open the browser menu and choose <b>Install app</b>, <b>Add to Home screen</b>, or similar. If that option is not shown, this browser may not support web-app installation.</p>";
+  }
+}
+
+function openInstallGuide() {
+  renderInstallInstructions();
+  installGuide.hidden = false;
+}
+
 function inspectPoint(latlng) {
   const distanceKm = map.distance(state.observer, latlng) / 1000;
   const bearing = initialBearing(state.observer, latlng);
@@ -1919,6 +1958,17 @@ document.addEventListener("click", (event) => {
   shareButton.setAttribute("aria-expanded", "false");
 });
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
+document.querySelector("#install-app").addEventListener("click", openInstallGuide);
+document.querySelector("#close-install-guide").addEventListener("click", () => { installGuide.hidden = true; });
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  if (!installGuide.hidden) renderInstallInstructions();
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (!installGuide.hidden) renderInstallInstructions();
+});
 weatherLayerSelect.addEventListener("change", updateWeatherOverlay);
 weatherTimeSelect.addEventListener("change", () => {
   updateWeatherOverlay();

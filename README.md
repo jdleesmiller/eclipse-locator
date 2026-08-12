@@ -24,6 +24,10 @@ The automated mobile-sized smoke test is self-contained: `npm run test:ui` start
 
 To view it on an iPhone on the same Wi-Fi network, find the computer's local IP address and open `http://COMPUTER-IP:8080` on the phone. The map and manual observer placement work this way, but browser geolocation generally requires HTTPS (except on `localhost`). For reliable phone geolocation, deploy to an HTTPS host such as GitHub Pages or serve locally with a trusted HTTPS certificate.
 
+## Install on a phone
+
+The site includes a web app manifest, standalone display metadata and home-screen icons. Use **Install on this device** on the opening screen for platform-specific instructions. Compatible Chromium browsers can show a native install prompt; on iPhone, open the site in Safari and use **Share → Add to Home Screen**, with **Open as Web App** enabled. There is deliberately no service worker yet: the installed app still needs an internet connection for its code, maps, terrain and forecasts.
+
 ## Browser permissions and limitations
 
 - Geolocation requires user permission and, on normal hostnames/IP addresses, a secure HTTPS context. If it fails, search for a place using the key-free Open-Meteo geocoding service. The map does not load until a location is chosen.
