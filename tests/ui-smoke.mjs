@@ -53,6 +53,13 @@ try {
   if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
   if (await page.locator("#event-obscuration-fact").isVisible()) throw new Error("Obscuration should be hidden for a total eclipse");
   if (await page.locator("#share-button").count() !== 1) throw new Error("Expected one top-level share control");
+  await page.locator("#share-button").click();
+  await page.locator("#share-menu").waitFor({ state: "visible" });
+  await page.locator("#copy-share-link").click();
+  const copiedShareUrl = await page.evaluate(() => navigator.clipboard.readText());
+  const parsedShareUrl = new URL(copiedShareUrl);
+  if (!parsedShareUrl.searchParams.get("lat") || !parsedShareUrl.searchParams.get("lng") || !parsedShareUrl.searchParams.get("eclipse")) throw new Error(`Copy link did not write the complete share URL: ${copiedShareUrl}`);
+  if (!await page.locator("#share-status").filter({ hasText: "Share link copied" }).isVisible()) throw new Error("Expected copy-link confirmation");
   if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
   if (await page.locator("#map-close-button svg").count() !== 1) throw new Error("Expected an SVG close control on the map");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");

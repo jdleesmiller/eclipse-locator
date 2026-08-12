@@ -133,6 +133,10 @@ const savedLocationCount = document.querySelector("#saved-location-count");
 const savedLocationsCard = document.querySelector("#saved-locations-card");
 const savedComparison = document.querySelector("#saved-comparison");
 const shareStatus = document.querySelector("#share-status");
+const shareButton = document.querySelector("#share-button");
+const shareMenu = document.querySelector("#share-menu");
+const copyShareLinkButton = document.querySelector("#copy-share-link");
+const systemShareButton = document.querySelector("#system-share");
 const arButton = document.querySelector("#ar-button");
 const arEntrySafety = document.querySelector("#ar-entry-safety");
 
@@ -1789,22 +1793,17 @@ function sharedLocationFromUrl(params = new URLSearchParams(window.location.sear
   };
 }
 
-async function shareCurrentView() {
+function currentShareData() {
   updateUrlState();
-  const shareData = {
+  return {
     title: `${state.locationName} · Eclipse Locator`,
     text: `${eventKindOutput.textContent} viewed from ${state.locationName}`,
     url: window.location.href,
   };
-  if (navigator.share) {
-    try {
-      await navigator.share(shareData);
-      shareStatus.textContent = "Share sheet opened.";
-      return;
-    } catch (error) {
-      if (error.name === "AbortError") return;
-    }
-  }
+}
+
+async function copyCurrentViewLink() {
+  const shareData = currentShareData();
   try {
     await navigator.clipboard.writeText(shareData.url);
     shareStatus.textContent = "Share link copied.";
@@ -1812,6 +1811,27 @@ async function shareCurrentView() {
     window.prompt("Copy this share link:", shareData.url);
     shareStatus.textContent = "Copy the link shown to share this view.";
   }
+  shareMenu.hidden = true;
+  shareButton.setAttribute("aria-expanded", "false");
+}
+
+async function systemShareCurrentView() {
+  if (!navigator.share) return;
+  try {
+    await navigator.share(currentShareData());
+    shareStatus.textContent = "Share sheet opened.";
+  } catch (error) {
+    if (error.name !== "AbortError") shareStatus.textContent = "System sharing was unavailable. You can still copy the link.";
+  }
+  shareMenu.hidden = true;
+  shareButton.setAttribute("aria-expanded", "false");
+}
+
+function toggleShareMenu() {
+  shareStatus.textContent = "";
+  shareMenu.hidden = !shareMenu.hidden;
+  shareButton.setAttribute("aria-expanded", String(!shareMenu.hidden));
+  if (!shareMenu.hidden) copyShareLinkButton.focus();
 }
 
 document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
@@ -1880,7 +1900,17 @@ function showLocationGate() {
 document.querySelector("#choose-location-button").addEventListener("click", showLocationGate);
 document.querySelector("#map-close-button").addEventListener("click", showLocationGate);
 document.querySelector("#explore-eclipses").addEventListener("click", openEclipseExplorer);
-document.querySelector("#share-button").addEventListener("click", shareCurrentView);
+shareButton.setAttribute("aria-haspopup", "menu");
+shareButton.setAttribute("aria-expanded", "false");
+systemShareButton.hidden = !navigator.share;
+shareButton.addEventListener("click", toggleShareMenu);
+copyShareLinkButton.addEventListener("click", copyCurrentViewLink);
+systemShareButton.addEventListener("click", systemShareCurrentView);
+document.addEventListener("click", (event) => {
+  if (shareMenu.hidden || shareMenu.contains(event.target) || shareButton.contains(event.target)) return;
+  shareMenu.hidden = true;
+  shareButton.setAttribute("aria-expanded", "false");
+});
 document.querySelector("#close-explorer").addEventListener("click", () => { eclipseExplorer.hidden = true; });
 weatherLayerSelect.addEventListener("change", updateWeatherOverlay);
 weatherTimeSelect.addEventListener("change", () => {

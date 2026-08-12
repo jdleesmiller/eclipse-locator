@@ -58,11 +58,15 @@ button, input { font: inherit; }
 .icon-button { pointer-events: auto; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; background: rgba(7,21,37,.88); color: white; font-size: 26px; }
 .icon-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .top-actions { display: flex; gap: 8px; pointer-events: auto; }
+.share-menu { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 116px; display: grid; gap: 5px; width: 145px; padding: 7px; border: 1px solid var(--line); border-radius: 11px; background: rgba(7,21,37,.97); box-shadow: 0 8px 24px rgba(0,0,0,.35); pointer-events: auto; }
+.share-menu[hidden] { display: none; }
+.share-menu button { min-height: 38px; padding: 7px 10px; text-align: left; }
 
 @media (max-width: 420px) {
   .top-actions { gap: 6px; }
   .top-actions .icon-button { width: 42px; height: 42px; min-height: 42px; }
   .topbar h1 { font-size: 19px; }
+  .share-menu { right: 104px; }
 }
 
 .panel {
