@@ -43,7 +43,7 @@
     return samples.filter(predicate).reduce((best, sample) => !best || sample.terrainAngleDeg > best.terrainAngleDeg ? sample : best, null);
   }
 
-  function classification(clearanceDeg) {
+  function terrainClearanceClassification(clearanceDeg) {
     if (clearanceDeg > 5) return "comfortable";
     if (clearanceDeg >= 2) return "acceptable";
     if (clearanceDeg >= 0) return "marginal";
@@ -92,7 +92,7 @@
         clearanceDeg: Number(clearanceDeg.toFixed(2)),
         classificationHalfWidthDeg: CLASSIFICATION_HALF_WIDTH_DEG,
         safetyMarginDeg: 2,
-        classification: classification(clearanceDeg),
+        classification: terrainClearanceClassification(clearanceDeg),
         method: "AWS Terrain Tiles (EU-DEM, Terrarium z11); 1.7 m eye height and spherical-Earth curvature; no atmospheric refraction/buildings/vegetation",
         debugSamples: detailed,
       };
@@ -102,5 +102,5 @@
   }
 
   window.EclipseWeather = window.EclipseWeather || {};
-  Object.assign(window.EclipseWeather, { analyzeTerrain, terrainDistances, terrainApparentAngleDeg, solarRayAltitudeM, TERRAIN_RAY_OFFSETS_DEG, TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG: CLASSIFICATION_HALF_WIDTH_DEG, TERRAIN_NEAR_SPACING_KM: NEAR_SPACING_KM, TERRAIN_EYE_HEIGHT_M: EYE_HEIGHT_M });
+  Object.assign(window.EclipseWeather, { analyzeTerrain, terrainDistances, terrainApparentAngleDeg, solarRayAltitudeM, terrainClearanceClassification, TERRAIN_RAY_OFFSETS_DEG, TERRAIN_CLASSIFICATION_HALF_WIDTH_DEG: CLASSIFICATION_HALF_WIDTH_DEG, TERRAIN_NEAR_SPACING_KM: NEAR_SPACING_KM, TERRAIN_EYE_HEIGHT_M: EYE_HEIGHT_M });
 }());

@@ -1155,24 +1155,29 @@ async function loadTerrain() {
 
     renderTerrainProfile(state.terrainSamples);
     const relevant = state.terrainSamples.slice(1);
-    const worst = relevant.reduce((lowest, sample) => sample.clearanceM < lowest.clearanceM ? sample : lowest);
+    const horizon = relevant.reduce((highest, sample) => {
+      const terrainAngleDeg = EclipseWeather.terrainApparentAngleDeg(sample.terrainElevationM, observerElevationM, sample.distanceKm);
+      return !highest || terrainAngleDeg > highest.terrainAngleDeg ? { ...sample, terrainAngleDeg } : highest;
+    }, null);
+    const clearanceDeg = state.elevation - horizon.terrainAngleDeg;
+    const classification = EclipseWeather.terrainClearanceClassification(clearanceDeg);
     const blocked = relevant.filter((sample) => sample.clearanceM < 0);
-    if (blocked.length) {
+    if (classification === "blocked") {
       const first = blocked[0];
       terrainResult.className = "result-badge blocked";
       terrainResult.textContent = "Obstructed";
-      terrainNote.textContent = `First sampled obstruction at ${first.distanceKm.toFixed(1)} km; terrain is ${Math.round(-first.clearanceM)} m above the solar ray. Minimum clearance: ${Math.round(worst.clearanceM)} m.`;
+      terrainNote.textContent = `First sampled obstruction at ${first.distanceKm.toFixed(1)} km. The centre-ray terrain horizon is ${horizon.terrainAngleDeg.toFixed(1)}°, leaving ${clearanceDeg.toFixed(1)}° clearance.`;
       for (const sample of blocked) {
         L.circleMarker(sample.location, { radius: 3, color: "#fff", weight: 1, fillColor: "#e64f43", fillOpacity: 0.9, interactive: false }).addTo(terrainLayer);
       }
-    } else if (worst.clearanceM < 50) {
+    } else if (classification === "marginal") {
       terrainResult.className = "result-badge concerning";
       terrainResult.textContent = "Concerning";
-      terrainNote.textContent = `The smallest sampled clearance is only ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
+      terrainNote.textContent = `The centre-ray terrain horizon is ${horizon.terrainAngleDeg.toFixed(1)}°, leaving only ${clearanceDeg.toFixed(1)}° clearance. Buildings, trees and narrow features are not included.`;
     } else {
       terrainResult.className = "result-badge clear";
       terrainResult.textContent = "OK";
-      terrainNote.textContent = `Minimum sampled clearance is ${Math.round(worst.clearanceM)} m at ${worst.distanceKm.toFixed(1)} km. Buildings and narrow features are not included.`;
+      terrainNote.textContent = `The centre-ray terrain horizon is ${horizon.terrainAngleDeg.toFixed(1)}°, leaving ${clearanceDeg.toFixed(1)}° clearance. Buildings, trees and narrow features are not included.`;
     }
   } catch (error) {
     if (error.name === "AbortError") return;

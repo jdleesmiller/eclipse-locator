@@ -121,6 +121,8 @@ try {
   for (const check of orientationChecks) {
     if (Math.abs(check.actual.heading - check.heading) > 0.01 || Math.abs(check.actual.pitch - check.pitch) > 0.01) throw new Error(`Rear-camera orientation conversion failed: ${JSON.stringify(check)}`);
   }
+  const terrainClasses = await page.evaluate(() => [-0.01, 0, 1.99, 2, 5, 5.01].map((clearance) => EclipseWeather.terrainClearanceClassification(clearance)));
+  if (terrainClasses.join(",") !== "blocked,marginal,marginal,acceptable,acceptable,comfortable") throw new Error(`Unexpected angular terrain thresholds: ${terrainClasses}`);
   if (await page.locator("#phase-technical > div").count() !== 5) throw new Error("Expected detailed total-eclipse phases under technical details");
   await page.evaluate(() => {
     const locations = savedLocationsForCurrentEclipse();
