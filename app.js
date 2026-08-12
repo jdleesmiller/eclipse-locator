@@ -111,6 +111,7 @@ const installInstructions = document.querySelector("#install-instructions");
 const locationGate = document.querySelector("#location-gate");
 const panel = document.querySelector(".panel");
 const gateStatus = document.querySelector("#gate-status");
+const gateLocateButton = document.querySelector("#gate-locate");
 const placeResults = document.querySelector("#place-results");
 const lastLocationButton = document.querySelector("#last-location");
 const eventKindOutput = document.querySelector("#event-kind");
@@ -1691,6 +1692,11 @@ function setObserver(latlng, message, fit = false) {
   else findAndSelectEclipse({ fit });
 }
 
+function setGateLocationLoading(loading) {
+  gateLocateButton.disabled = loading;
+  gateLocateButton.textContent = loading ? "Requesting location…" : "Start with my location";
+}
+
 function locateUser(fromGate = false) {
   if (!navigator.geolocation) {
     const message = "This browser does not provide geolocation. Search for a place instead.";
@@ -1698,10 +1704,17 @@ function locateUser(fromGate = false) {
     else statusOutput.textContent = message;
     return;
   }
-  if (fromGate) gateStatus.textContent = "Requesting your location…";
+  if (fromGate) {
+    gateStatus.textContent = "";
+    setGateLocationLoading(true);
+  }
   else statusOutput.textContent = "Finding your location…";
   navigator.geolocation.getCurrentPosition(
     (position) => {
+      if (fromGate) {
+        setGateLocationLoading(false);
+        gateStatus.textContent = "";
+      }
       state.deviceLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
       state.deviceLocationAccuracyM = position.coords.accuracy;
       activateLocation({
@@ -1713,6 +1726,7 @@ function locateUser(fromGate = false) {
       if (position.coords.accuracy > 1000) statusOutput.textContent = `Location accuracy is poor (approximately ±${Math.round(position.coords.accuracy / 100) / 10} km). Choose or move the viewing point before relying on the sightline.`;
     },
     () => {
+      if (fromGate) setGateLocationLoading(false);
       state.deviceLocation = null;
       state.deviceLocationAccuracyM = null;
       refreshObserverContext();
@@ -1880,7 +1894,7 @@ function toggleShareMenu() {
 
 document.querySelector("#locate-button").addEventListener("click", () => locateUser(false));
 arUseCurrentLocation.addEventListener("click", () => locateUser(false));
-document.querySelector("#gate-locate").addEventListener("click", () => locateUser(true));
+gateLocateButton.addEventListener("click", () => locateUser(true));
 document.querySelector("#place-search-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const query = document.querySelector("#place-search").value.trim();

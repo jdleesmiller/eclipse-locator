@@ -53,6 +53,10 @@ try {
   const urlState = new URL(page.url());
   if (!urlState.searchParams.get("lat") || !urlState.searchParams.get("lng") || !urlState.searchParams.get("eclipse")) throw new Error("Shareable URL state is incomplete");
   if ((await page.locator("#gate-title").textContent()) !== "Find the best place to see your next solar eclipse") throw new Error("Opening explanation heading is incorrect");
+  await page.evaluate(() => setGateLocationLoading(true));
+  if ((await page.locator("#gate-locate").textContent()) !== "Requesting location…" || !await page.locator("#gate-locate").isDisabled()) throw new Error("Location request should use the primary button as its progress state");
+  await page.evaluate(() => setGateLocationLoading(false));
+  if ((await page.locator("#gate-locate").textContent()) !== "Start with my location" || await page.locator("#gate-locate").isDisabled()) throw new Error("Location button should reset after a request");
   if ((await page.locator('link[rel="manifest"]').getAttribute("href")) !== "manifest.webmanifest") throw new Error("Web app manifest is not linked");
   if ((await page.locator('meta[name="mobile-web-app-capable"]').getAttribute("content")) !== "yes") throw new Error("Modern mobile web app metadata is missing");
   const manifest = await (await page.request.get("http://localhost:8080/manifest.webmanifest")).json();
@@ -267,8 +271,11 @@ try {
   await page.locator("#ar-button").waitFor({ state: "hidden" });
   if (await page.locator(".place-pin").count() !== 1) throw new Error("A selected place away from the device should use a map pin");
   if (!await page.locator("#ar-location-note").isVisible()) throw new Error("Expected an explanation when camera view is unavailable away from the device");
+  if (await page.locator("#ar-use-current-location").isVisible()) throw new Error("Current-location action should be hidden when a device location is already known");
+  if (!/^Camera view/.test((await page.locator("#ar-location-note").innerText()).trim())) throw new Error("Known-location camera explanation should not be prefixed by a hidden action");
   await page.evaluate(() => { state.deviceLocation = null; state.deviceLocationAccuracyM = null; refreshObserverContext(); });
   if (!await page.locator("#ar-use-current-location").isVisible()) throw new Error("Expected an inline current-location action when camera view is unavailable");
+  if (!/^Use current location to enable/.test((await page.locator("#ar-location-note").innerText()).trim())) throw new Error("Current-location action and camera explanation should have readable spacing");
   await page.evaluate(() => { state.deviceLocation = { lat: 43.5322, lng: -5.6611 }; state.deviceLocationAccuracyM = 10; });
   await page.evaluate(() => history.back());
   await page.locator("#ar-button").waitFor({ state: "visible" });

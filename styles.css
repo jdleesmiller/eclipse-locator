@@ -113,6 +113,7 @@ button { min-height: 43px; border: 0; border-radius: 10px; background: var(--acc
 button.secondary { border: 1px solid var(--line); background: #162b3e; color: var(--ink); }
 button.active { background: #f47d4b; }
 button.inline-link { display: inline; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #b9d8ef; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
+button.inline-link[hidden] { display: none; }
 .install-app-footer button.install-app-button { color: var(--muted); font-size: 10px; font-weight: 600; text-decoration-color: rgba(156,171,185,.45); }
 
 .terrain-card, .sightline-card, .technical-details { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
