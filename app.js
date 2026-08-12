@@ -71,6 +71,7 @@ let sightlineLayer = null;
 let terrainLayer = null;
 let weatherLayer = null;
 let lastLocationChoice = null;
+let shareStatusTimer = null;
 
 const azimuthOutput = document.querySelector("#azimuth");
 const elevationOutput = document.querySelector("#elevation");
@@ -1802,14 +1803,20 @@ function currentShareData() {
   };
 }
 
+function showShareStatus(message) {
+  shareStatus.textContent = message;
+  clearTimeout(shareStatusTimer);
+  shareStatusTimer = message ? setTimeout(() => { shareStatus.textContent = ""; }, 2500) : null;
+}
+
 async function copyCurrentViewLink() {
   const shareData = currentShareData();
   try {
     await navigator.clipboard.writeText(shareData.url);
-    shareStatus.textContent = "Share link copied.";
+    showShareStatus("Share link copied.");
   } catch {
     window.prompt("Copy this share link:", shareData.url);
-    shareStatus.textContent = "Copy the link shown to share this view.";
+    showShareStatus("Copy the link shown to share this view.");
   }
   shareMenu.hidden = true;
   shareButton.setAttribute("aria-expanded", "false");
@@ -1819,16 +1826,16 @@ async function systemShareCurrentView() {
   if (!navigator.share) return;
   try {
     await navigator.share(currentShareData());
-    shareStatus.textContent = "Share sheet opened.";
+    showShareStatus("Share sheet opened.");
   } catch (error) {
-    if (error.name !== "AbortError") shareStatus.textContent = "System sharing was unavailable. You can still copy the link.";
+    if (error.name !== "AbortError") showShareStatus("System sharing was unavailable. You can still copy the link.");
   }
   shareMenu.hidden = true;
   shareButton.setAttribute("aria-expanded", "false");
 }
 
 function toggleShareMenu() {
-  shareStatus.textContent = "";
+  showShareStatus("");
   shareMenu.hidden = !shareMenu.hidden;
   shareButton.setAttribute("aria-expanded", String(!shareMenu.hidden));
   if (!shareMenu.hidden) copyShareLinkButton.focus();

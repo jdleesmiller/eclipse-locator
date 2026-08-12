@@ -60,6 +60,19 @@ try {
   const parsedShareUrl = new URL(copiedShareUrl);
   if (!parsedShareUrl.searchParams.get("lat") || !parsedShareUrl.searchParams.get("lng") || !parsedShareUrl.searchParams.get("eclipse")) throw new Error(`Copy link did not write the complete share URL: ${copiedShareUrl}`);
   if (!await page.locator("#share-status").filter({ hasText: "Share link copied" }).isVisible()) throw new Error("Expected copy-link confirmation");
+  await page.waitForTimeout(2700);
+  if (await page.locator("#share-status").textContent()) throw new Error("Share confirmation should dismiss automatically");
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.locator("#share-button").click();
+  const shareStacking = await page.evaluate(() => {
+    const menu = document.querySelector("#share-menu");
+    const point = menu.getBoundingClientRect();
+    const topElement = document.elementFromPoint(point.left + point.width / 2, point.bottom - 8);
+    return { menuContainsTopElement: menu.contains(topElement), topElement: topElement?.id || topElement?.className || topElement?.tagName };
+  });
+  if (!shareStacking.menuContainsTopElement) throw new Error(`Desktop share menu is covered by ${shareStacking.topElement}`);
+  await page.locator("#share-button").click();
+  await page.setViewportSize({ width: 375, height: 812 });
   if (await page.locator("#locate-button svg").count() !== 1) throw new Error("Expected an SVG location control");
   if (await page.locator("#map-close-button svg").count() !== 1) throw new Error("Expected an SVG close control on the map");
   if (await page.locator(".panel-actions > button").count() !== 2) throw new Error("Expected symmetric eclipse and location actions");
