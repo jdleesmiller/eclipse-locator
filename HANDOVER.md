@@ -35,7 +35,7 @@ The frontend is intentionally static: no bundler, framework or build step is req
 - `weather/corridor-analysis.js`: curvature-aware ±5° cloud corridor through nominal 3/8/15 km cloud layers, sampled every 2.5 km and capped at 150 km.
 - `weather/terrain-analysis.js`: dense terrain horizon across centre, ±0.25°, ±0.5° and contextual ±5° rays.
 - `weather/aemet-client.js`: direct AEMET WMS display plus numeric proxy client.
-- `weather/climatology.js`: ERA5 bright-sun climatology client and planning-period presentation.
+- `weather/climatology.js`: ERA5 near-clear direct-sun climatology client and planning-period presentation.
 - `weather/digest.js`: saved-place enrichment, ranking and Markdown/JSON export.
 - `server/server.js`: public Cloud Run proxy for AEMET WCS/WMS sampling and AWS Terrain Tiles.
 - `tests/ui-smoke.mjs`: broad browser regression test, including the 2026 Gijón geometry reference and simulated AR.
@@ -122,7 +122,7 @@ After deployment:
 
 ## Known limitations and likely next work
 
-- Short-range weather is Spain/AEMET-only and appears when the selected eclipse is between 3 hours in the past and 72 hours in the future (the proxy accepts a slightly wider −8/+78-hour window). Elsewhere, the UI falls back to ERA5 historical bright-sun frequency through the proxy.
+- Short-range weather is Spain/AEMET-only and appears when the selected eclipse is between 3 hours in the past and 72 hours in the future (the proxy accepts a slightly wider −8/+78-hour window). Elsewhere, the UI falls back to ERA5 historical near-clear direct-sun frequency through the proxy.
 - Historical planning uses 2001–2025 with ±14 days around the eclipse date and also computes the WMO 1991–2020 standard period for progressive disclosure. Advance the planning period deliberately after validating a complete/finalized new season; the years are currently explicit constants rather than silently rolling.
 - Forecast scoring is a pragmatic sorting aid, not a validated probability of eclipse visibility. Raw cloud and terrain values should drive decisions.
 - AEMET exposes valid time but not model initialization, so apparent “trend” is comparison with the previous saved digest, not a reliably identified model-run change.

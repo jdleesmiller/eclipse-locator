@@ -58,6 +58,7 @@ try {
   await page.evaluate(() => setGateLocationLoading(false));
   if ((await page.locator("#gate-locate").textContent()) !== "Start with my location" || await page.locator("#gate-locate").isDisabled()) throw new Error("Location button should reset after a request");
   if ((await page.locator('link[rel="manifest"]').getAttribute("href")) !== "manifest.webmanifest") throw new Error("Web app manifest is not linked");
+  if (!/styles\.css\?v=20260813-sightlinedetails2$/.test(await page.locator('link[rel="stylesheet"]').last().getAttribute("href"))) throw new Error("Stylesheet cache buster was not updated");
   if ((await page.locator('meta[name="mobile-web-app-capable"]').getAttribute("content")) !== "yes") throw new Error("Modern mobile web app metadata is missing");
   const manifest = await (await page.request.get("http://localhost:8080/manifest.webmanifest")).json();
   if (manifest.display !== "standalone" || !manifest.icons?.some((icon) => icon.sizes === "192x192") || !manifest.icons?.some((icon) => icon.sizes === "512x512")) throw new Error(`Manifest is incomplete: ${JSON.stringify(manifest)}`);
@@ -178,10 +179,16 @@ try {
   }));
   if (!cloudGeometry.lowSun.earthCurvature || cloudGeometry.lowSun.maxDistanceKm >= cloudGeometry.flatLowSun15km || cloudGeometry.lowSun.maxDistanceKm <= cloudGeometry.highSun.maxDistanceKm) throw new Error(`Cloud sightline geometry is not curvature-aware and elevation-dependent: ${JSON.stringify(cloudGeometry)}`);
   if (!(cloudGeometry.highSun.layers.low.toKm < cloudGeometry.highSun.layers.middle.toKm && cloudGeometry.highSun.layers.middle.toKm < cloudGeometry.highSun.layers.high.toKm)) throw new Error(`Cloud layers are not ordered along the sightline: ${JSON.stringify(cloudGeometry.highSun)}`);
+  const profileRangeState = await page.evaluate(() => ({
+    buttons: [...document.querySelectorAll(".profile-ranges button:not([hidden])")].map((button) => ({ label: button.textContent, range: Number(button.dataset.range) })),
+    expected: EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm,
+    technical: document.querySelector("#sightline-technical").textContent,
+  }));
+  if (profileRangeState.buttons.at(-1)?.range !== profileRangeState.expected || !profileRangeState.buttons.at(-1)?.label.startsWith("Full sightline") || profileRangeState.technical.includes("60 km")) throw new Error(`Sightline profile controls/details are not geometry-dependent: ${JSON.stringify(profileRangeState)}`);
   const [testClimatology] = await page.evaluate(() => EclipseWeather.climatologyCandidates([{ id: "test", lat: 36.72, lng: -3 }], "2027-08-02T10:00:00.000Z"));
-  if (testClimatology.climatology.sampleCount !== 725 || !Number.isFinite(testClimatology.climatology.brightSunPct) || testClimatology.climatology.brightSunThresholdWm2 !== 120) throw new Error(`Historical bright-sun fixture is incomplete: ${JSON.stringify(testClimatology)}`);
+  if (testClimatology.climatology.sampleCount !== 725 || !Number.isFinite(testClimatology.climatology.nearClearDirectSunPct) || testClimatology.climatology.clearSkyRatioThreshold !== 0.85) throw new Error(`Historical direct-sun fixture is incomplete: ${JSON.stringify(testClimatology)}`);
   await page.evaluate((climatology) => { renderClimateIndicator(climatology); climateCard.hidden = false; }, testClimatology.climatology);
-  if (!await page.locator("#climate-headline").filter({ hasText: "Bright sunshine occurred" }).isVisible() || !/1991–2020 standard normal/.test(await page.locator("#climate-detail-content").textContent())) throw new Error("Historical outlook progressive disclosure is incomplete");
+  if (!await page.locator("#climate-headline").filter({ hasText: "Near-clear direct sunlight occurred" }).isVisible() || !/WMO standard normal \(1991–2020\)/.test(await page.locator("#climate-detail-content").textContent())) throw new Error("Historical outlook progressive disclosure is incomplete");
   await page.evaluate(() => { climateCard.hidden = true; });
   if (await page.locator("#phase-technical > div").count() !== 5) throw new Error("Expected detailed total-eclipse phases under technical details");
   await page.evaluate(() => {
@@ -202,8 +209,8 @@ try {
   await page.locator(".saved-eclipse-heading button").first().click();
   await page.locator(".weather-result").first().waitFor({ state: "visible" });
   if (await page.locator(".weather-result").count() !== 2) throw new Error("Expected both the Spanish and out-of-area saved locations");
-  await page.locator("#weather-status").filter({ hasText: "Short-range forecast for 1; historical sunshine for 1" }).waitFor();
-  if (!await page.locator(".climatology-result").filter({ hasText: "bright sunshine" }).isVisible()) throw new Error("Expected historical sunshine to cover the out-of-area comparison result");
+  await page.locator("#weather-status").filter({ hasText: "Short-range forecast for 1; historical direct sun for 1" }).waitFor();
+  if (!await page.locator(".climatology-result").filter({ hasText: "near-clear direct sun" }).isVisible()) throw new Error("Expected historical direct-sun climatology to cover the out-of-area comparison result");
   await page.locator("#weather-digest").waitFor({ state: "visible" });
   await page.locator("#copy-weather-json").click();
   const digest = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
@@ -220,7 +227,7 @@ try {
     const lowTop = candidate.weather.geometry.layers.low.toKm;
     return end <= lowTop && lowTop - end < 2.51;
   })) throw new Error("Low-cloud distance profiles should stop in the low-cloud layer");
-  if (!climateCandidates.every((candidate) => candidate.climatology.brightSunThresholdWm2 === 120 && candidate.terrain.classification)) throw new Error("Climatology candidates need the WMO threshold and terrain result");
+  if (!climateCandidates.every((candidate) => candidate.climatology.clearSkyRatioThreshold === 0.85 && candidate.terrain.classification)) throw new Error("Climatology candidates need the clear-sky ratio threshold and terrain result");
   const editedCandidate = digest.candidates.find((candidate) => candidate.name === "Edited smoke-test location");
   if (editedCandidate?.notes !== "Smoke-test viewing note") throw new Error("Digest is missing the saved location note");
   if (digest.terrainSampling.classificationHalfWidthDeg !== 0.5) throw new Error("Terrain classification wedge is not ±0.5°");

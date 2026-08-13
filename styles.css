@@ -200,6 +200,7 @@ button.inline-link[hidden] { display: none; }
 .phase-technical span { color: #d7e2ea; }
 .phase-technical b { color: white; font-size: 10px; }
 .phase-technical small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; }
+.sightline-technical { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
 .saved-locations-card { margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
 .saved-eclipse-group { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
 .saved-eclipse-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

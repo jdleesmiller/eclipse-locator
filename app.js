@@ -1,6 +1,5 @@
 /* global L, Astronomy */
 
-const MAX_DISTANCE_KM = 60;
 const WEDGE_DEGREES = 4;
 const TERRAIN_SAMPLE_COUNT = 100;
 const CALIBRATION_STORAGE_KEY = "eclipse-locator-ar-calibrations-v1";
@@ -77,6 +76,7 @@ let deferredInstallPrompt = null;
 const azimuthOutput = document.querySelector("#azimuth");
 const elevationOutput = document.querySelector("#elevation");
 const directionOutput = document.querySelector("#direction");
+const sightlineTechnical = document.querySelector("#sightline-technical");
 const statusOutput = document.querySelector("#status");
 const terrainProfile = document.querySelector("#terrain-profile");
 const profileCloudKey = document.querySelector("#profile-cloud-key");
@@ -561,6 +561,49 @@ function renderPhaseTechnical() {
   }).join("");
 }
 
+function formatDistanceKm(distanceKm) {
+  return Number(distanceKm.toFixed(1)).toString();
+}
+
+function updateProfileRanges() {
+  if (!Number.isFinite(state.elevation)) return;
+  const maxDistanceKm = EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm;
+  const proposed = maxDistanceKm <= 5 ? [maxDistanceKm]
+    : maxDistanceKm <= 20 ? [5, Math.min(10, maxDistanceKm), maxDistanceKm]
+      : [5, 20, maxDistanceKm];
+  const ranges = [...new Set(proposed.map((value) => Number(value.toFixed(1))))];
+  if (!ranges.includes(state.profileRangeKm)) state.profileRangeKm = ranges[0];
+  const buttons = [...document.querySelectorAll(".profile-ranges button")];
+  buttons.forEach((button, index) => {
+    const range = ranges[index];
+    button.hidden = range === undefined;
+    if (range === undefined) return;
+    button.dataset.range = String(range);
+    button.textContent = index === ranges.length - 1 ? `Full sightline · ${formatDistanceKm(range)} km` : index === 0 ? `First ${formatDistanceKm(range)} km` : `${formatDistanceKm(range)} km`;
+    button.classList.toggle("active", range === state.profileRangeKm);
+  });
+  document.querySelector(".profile-ranges").style.gridTemplateColumns = `repeat(${ranges.length}, 1fr)`;
+}
+
+function renderSightlineTechnical() {
+  if (!state.observer || !Number.isFinite(state.elevation)) return;
+  const geometry = EclipseWeather.cloudSightlineGeometry(state.elevation);
+  const layers = geometry.layers;
+  const currentId = locationId(state.observer);
+  const forecast = state.weather.results?.find((candidate) => candidate.id === currentId)?.weather?.target;
+  const climate = state.weather.climateResult;
+  const cloudRow = weatherApplies()
+    ? forecast
+      ? `<div><span>Forecast cloud by layer</span><b>${forecast.layers.low.wedgeMean} / ${forecast.layers.middle.wedgeMean} / ${forecast.layers.high.wedgeMean}%</b><small>Low / middle / high means along their corresponding sightline segments.</small></div>`
+      : `<div><span>Forecast cloud by layer</span><b>Not loaded</b><small>Open Sightline profile to load numeric low/middle/high corridor values.</small></div>`
+    : climate
+      ? `<div><span>Historical cloud at ERA5 cell</span><b>${climate.medianLowCloudPct} / ${climate.medianMidCloudPct} / ${climate.medianHighCloudPct}%</b><small>Median low / middle / high cloud; ${climate.nearClearDirectSunPct}% near-clear direct sun in ${climate.period.startYear}–${climate.period.endYear}.</small></div>`
+      : `<div><span>Historical cloud</span><b>Loading…</b><small>ERA5 eclipse-time climatology for this location.</small></div>`;
+  sightlineTechnical.innerHTML = `<div><span>Cloud sightline reach</span><b>${formatDistanceKm(geometry.maxDistanceKm)} km</b><small>Curvature-aware distance to the nominal 15 km high-cloud top at ${state.elevation.toFixed(1)}° solar elevation.</small></div>
+    <div><span>Layer ground ranges</span><b>0–${formatDistanceKm(layers.low.toKm)} / ${formatDistanceKm(layers.middle.fromKm)}–${formatDistanceKm(layers.middle.toKm)} / ${formatDistanceKm(layers.high.fromKm)}–${formatDistanceKm(layers.high.toKm)} km</b><small>Low 0–3 km / middle 3–8 km / high 8–15 km altitude layers.</small></div>
+    ${cloudRow}`;
+}
+
 function selectEclipse(eclipse, fit = true) {
   state.eclipse = eclipse;
   const kind = eclipseKindName(eclipse.kind);
@@ -676,19 +719,22 @@ async function updateCloudIndicator() {
 }
 
 function renderClimateIndicator(climatology) {
-  const classification = climatology.brightSunPct >= 80 ? "clear" : climatology.brightSunPct >= 60 ? "concerning" : "blocked";
-  const label = EclipseWeather.climatologyRating(climatology.brightSunPct);
+  const classification = climatology.nearClearDirectSunPct >= 70 ? "clear" : climatology.nearClearDirectSunPct >= 40 ? "concerning" : "blocked";
+  const label = EclipseWeather.climatologyRating(climatology.nearClearDirectSunPct);
   climateResult.className = `result-badge ${classification}`;
-  climateResult.textContent = `${label[0].toUpperCase()}${label.slice(1)} · ${climatology.brightSunPct}%`;
-  climateHeadline.innerHTML = `Bright sunshine occurred in <strong>${climatology.brightSunPct}%</strong> of comparable observations.`;
-  climateSummary.textContent = `${climatology.period.startYear}–${climatology.period.endYear} · ±${climatology.dateWindowDays} days · eclipse-time hour · ${climatology.sampleCount} samples`;
+  climateResult.textContent = `${label[0].toUpperCase()}${label.slice(1)} · ${climatology.nearClearDirectSunPct}%`;
+  climateHeadline.innerHTML = `Near-clear direct sunlight occurred in <strong>${climatology.nearClearDirectSunPct}%</strong> of comparable observations in the recent planning period.`;
+  climateSummary.textContent = `${climatology.period.startYear}–${climatology.period.endYear} planning period · ±${climatology.dateWindowDays} days · eclipse-time hour · ${climatology.sampleCount} samples`;
   climateDetailContent.innerHTML = `<div class="climate-detail-grid">
-    <span>No bright sunshine</span><b>${climatology.noBrightSunPct}%</b>
+    <span>Recent planning period (${climatology.period.startYear}–${climatology.period.endYear})</span><b>${climatology.nearClearDirectSunPct}% near-clear direct sun</b>
+    <span>WMO standard normal (${climatology.standardNormal?.period?.startYear ?? 1991}–${climatology.standardNormal?.period?.endYear ?? 2020})</span><b>${climatology.standardNormal?.nearClearDirectSunPct ?? "—"}% near-clear direct sun</b>
+    <span>Below near-clear threshold</span><b>${climatology.belowNearClearDirectSunPct}%</b>
+    <span>Median direct-beam clear-sky ratio</span><b>${climatology.medianDirectBeamClearSkyRatioPct}%</b>
     <span>Median total cloud</span><b>${climatology.medianCloudCoverPct}%</b>
     <span>Total-cloud middle 50%</span><b>${climatology.cloudCoverP25Pct}–${climatology.cloudCoverP75Pct}%</b>
     <span>Median low / middle / high cloud</span><b>${climatology.medianLowCloudPct} / ${climatology.medianMidCloudPct} / ${climatology.medianHighCloudPct}%</b>
-    <span>1991–2020 standard normal</span><b>${climatology.standardNormal?.brightSunPct ?? "—"}% bright sunshine</b>
-  </div><p>“Bright sunshine” uses the WMO threshold of direct-normal irradiance ≥${climatology.brightSunThresholdWm2} W/m². This is historical context, not a forecast. ERA5 grid resolution is approximately 25 km.</p>`;
+  </div><p>“Near-clear direct sun” means direct normal irradiance (DNI—the direct solar beam on a surface perpendicular to the Sun) was at least ${Math.round(climatology.clearSkyRatioThreshold * 100)}% of an NREL-style clear-sky reference. This is historical context, not a forecast. ERA5 grid resolution is approximately 25 km.</p>`;
+  renderSightlineTechnical();
 }
 
 async function updateClimateIndicator() {
@@ -698,6 +744,8 @@ async function updateClimateIndicator() {
   climateHeadline.textContent = "Loading comparable historical conditions…";
   climateSummary.textContent = "";
   climateDetailContent.replaceChildren();
+  state.weather.climateResult = null;
+  renderSightlineTechnical();
   try {
     const id = locationId(state.observer);
     const [result] = await EclipseWeather.climatologyCandidates([{ id, lat: state.observer.lat, lng: state.observer.lng }], state.viewingDate);
@@ -708,7 +756,7 @@ async function updateClimateIndicator() {
     if (request !== state.weather.climateRequest) return;
     climateResult.className = "result-badge";
     climateResult.textContent = "Unavailable";
-    climateHeadline.textContent = "Historical sunshine could not be loaded.";
+    climateHeadline.textContent = "Historical direct-sun conditions could not be loaded.";
     climateSummary.textContent = error.message;
   }
 }
@@ -760,10 +808,10 @@ function renderWeatherResults(results) {
     } else if (result.climatology) {
       const climate = result.climatology;
       item.classList.add("climatology-result");
-      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.climateRating} historical outlook (${climate.brightSunPct}% bright sunshine) · ${terrain.classification} terrain</span></button>
-        <small><b>Historical outlook:</b> bright sunshine in ${climate.brightSunPct}% of comparable observations · no bright sunshine ${climate.noBrightSunPct}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.climateRating} historical outlook (${climate.nearClearDirectSunPct}% near-clear direct sun) · ${terrain.classification} terrain</span></button>
+        <small><b>Historical outlook:</b> near-clear direct sun in ${climate.nearClearDirectSunPct}% of comparable observations · below threshold ${climate.belowNearClearDirectSunPct}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
         ${notesDetail}
-        <details><summary>Historical sunshine details</summary><p>${climate.period.startYear}–${climate.period.endYear} · ±${climate.dateWindowDays} days · eclipse-time hour · ${climate.sampleCount} samples.</p><p><b>Total cloud</b> median ${climate.medianCloudCoverPct}%, middle 50% ${climate.cloudCoverP25Pct}–${climate.cloudCoverP75Pct}%. <b>Median low / middle / high cloud</b> ${climate.medianLowCloudPct}/${climate.medianMidCloudPct}/${climate.medianHighCloudPct}%.</p><p><b>1991–2020 standard normal:</b> ${climate.standardNormal?.brightSunPct ?? "—"}% bright sunshine (${climate.standardNormal?.sampleCount ?? "—"} samples).</p><p>Bright sunshine uses direct-normal irradiance ≥${climate.brightSunThresholdWm2} W/m². Historical context is not a forecast.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
+        <details><summary>Historical direct-sun details</summary><p>${climate.period.startYear}–${climate.period.endYear} · ±${climate.dateWindowDays} days · eclipse-time hour · ${climate.sampleCount} samples.</p><p><b>Total cloud</b> median ${climate.medianCloudCoverPct}%, middle 50% ${climate.cloudCoverP25Pct}–${climate.cloudCoverP75Pct}%. <b>Median low / middle / high cloud</b> ${climate.medianLowCloudPct}/${climate.medianMidCloudPct}/${climate.medianHighCloudPct}%.</p><p><b>1991–2020 standard normal:</b> ${climate.standardNormal?.nearClearDirectSunPct ?? "—"}% near-clear direct sun (${climate.standardNormal?.sampleCount ?? "—"} samples).</p><p>Near-clear requires DNI to reach at least ${Math.round(climate.clearSkyRatioThreshold * 100)}% of an NREL-style clear-sky reference. Historical context is not a forecast.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
         <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ climatology: climate, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
     } else {
       item.classList.add("terrain-only-result");
@@ -809,7 +857,7 @@ function buildWeatherDigest(results) {
         "Target-time values are linearly interpolated approximations between the surrounding hourly AEMET grids.",
         "Model initialization time is not exposed by AEMET's public services.",
       ] : []),
-      "Historical bright-sun frequency uses ERA5 direct-normal irradiance and the WMO 120 W/m² threshold; it is climatology, not a forecast.",
+      "Historical near-clear direct-sun frequency uses ERA5 direct normal irradiance relative to an NREL-style clear-sky reference; it is climatology, not a forecast.",
       "Cloud values use nearest model raster cells; terrain excludes buildings, trees and atmospheric refraction.",
     ],
   });
@@ -868,12 +916,12 @@ async function analyzeWeather() {
     const fallbackCandidates = preparedCandidates.filter((candidate) => !cloudById.has(candidate.id));
     const climateById = new Map();
     if (fallbackCandidates.length) {
-      weatherStatus.textContent = `Loading historical bright-sun frequencies for ${fallbackCandidates.length} place${fallbackCandidates.length === 1 ? "" : "s"}…`;
+      weatherStatus.textContent = `Loading historical near-clear direct-sun frequencies for ${fallbackCandidates.length} place${fallbackCandidates.length === 1 ? "" : "s"}…`;
       try {
         const climateResults = await EclipseWeather.climatologyCandidates(fallbackCandidates, state.viewingDate);
         climateResults.forEach((candidate) => climateById.set(candidate.id, candidate));
       } catch (error) {
-        fallbackCandidates.forEach((candidate) => cloudFailures.set(candidate.id, `Historical sunshine analysis failed: ${error.message}`));
+        fallbackCandidates.forEach((candidate) => cloudFailures.set(candidate.id, `Historical direct-sun analysis failed: ${error.message}`));
       }
     }
     const terrainCandidates = preparedCandidates.map((candidate) => cloudById.get(candidate.id) || climateById.get(candidate.id) || {
@@ -883,7 +931,7 @@ async function analyzeWeather() {
       score: null,
       debug: { samples: [] },
       cloudUnavailableReason: cloudFailures.get(candidate.id)
-        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area and historical sunshine was unavailable." : "Historical sunshine was unavailable outside the short forecast window."),
+        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area and historical direct-sun history was unavailable." : "Historical direct-sun history was unavailable outside the short forecast window."),
     });
     weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
     const terrainResults = [];
@@ -903,7 +951,7 @@ async function analyzeWeather() {
     const forecastCount = results.filter((candidate) => candidate.weather).length;
     const climateCount = results.filter((candidate) => candidate.climatology).length;
     const terrainOnlyCount = results.length - forecastCount - climateCount;
-    weatherStatus.textContent = `Comparison refreshed. ${forecastCount ? `Short-range forecast for ${forecastCount}; ` : ""}${climateCount ? `historical sunshine for ${climateCount}; ` : ""}${terrainOnlyCount ? `terrain only for ${terrainOnlyCount}; ` : ""}${results.length} place${results.length === 1 ? "" : "s"} total.`;
+    weatherStatus.textContent = `Comparison refreshed. ${forecastCount ? `Short-range forecast for ${forecastCount}; ` : ""}${climateCount ? `historical direct sun for ${climateCount}; ` : ""}${terrainOnlyCount ? `terrain only for ${terrainOnlyCount}; ` : ""}${results.length} place${results.length === 1 ? "" : "s"} total.`;
     button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
@@ -1058,12 +1106,14 @@ function lineOfSightHeightKm(distanceKm) {
 }
 
 function terrainSampleDistances() {
+  const maxDistanceKm = EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm;
   // Spend 56 of the profile's 100 points in the first 5 km: about 91 m apart,
   // close to the useful source resolution. Space the rest evenly.
-  const nearCount = 56;
-  const near = Array.from({ length: nearCount }, (_, index) => 5 * index / (nearCount - 1));
+  const nearLimitKm = Math.min(5, maxDistanceKm);
+  const nearCount = maxDistanceKm <= 5 ? TERRAIN_SAMPLE_COUNT : 56;
+  const near = Array.from({ length: nearCount }, (_, index) => nearLimitKm * index / (nearCount - 1));
   const farCount = TERRAIN_SAMPLE_COUNT - nearCount;
-  const far = Array.from({ length: farCount }, (_, index) => 5 + (MAX_DISTANCE_KM - 5) * (index + 1) / farCount);
+  const far = Array.from({ length: farCount }, (_, index) => nearLimitKm + (maxDistanceKm - nearLimitKm) * (index + 1) / farCount);
   return [...near, ...far];
 }
 
@@ -1137,6 +1187,7 @@ async function loadCurrentCloudProfile() {
     state.weather.profileAttemptedId = null;
     profileCloudStatus.hidden = true;
     if (state.terrainSamples.length) renderTerrainProfile(state.terrainSamples);
+    renderSightlineTechnical();
   } catch (error) {
     if (request !== state.weather.profileRequest || contextId !== `${eclipseStorageKey()}:${locationId(state.observer)}`) return;
     state.weather.profileError = error.message;
@@ -1720,6 +1771,8 @@ function updateCalculations({ fit = false } = {}) {
   azimuthOutput.textContent = `${state.azimuth.toFixed(1)}°`;
   elevationOutput.textContent = `${state.elevation.toFixed(1)}°`;
   directionOutput.textContent = compassPoint(state.azimuth);
+  updateProfileRanges();
+  renderSightlineTechnical();
 
   observerMarker.setLatLng(state.observer);
   refreshObserverContext();

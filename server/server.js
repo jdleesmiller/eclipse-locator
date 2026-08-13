@@ -161,6 +161,23 @@ function percentile(values, fraction) {
 
 function isoDate(date) { return date.toISOString().slice(0, 10); }
 
+const CLEAR_SKY_RATIO_THRESHOLD = 0.85;
+const SOLAR_CONSTANT_W_M2 = 1361;
+
+function extraterrestrialNormalIrradiance(date) {
+  const yearStart = Date.UTC(date.getUTCFullYear(), 0, 1);
+  const dayOfYear = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - yearStart) / 86400000) + 1;
+  const angle = 2 * Math.PI * (dayOfYear - 1) / 365;
+  const earthSunCorrection = 1.00011 + 0.034221 * Math.cos(angle) + 0.00128 * Math.sin(angle)
+    + 0.000719 * Math.cos(2 * angle) + 0.000077 * Math.sin(2 * angle);
+  return SOLAR_CONSTANT_W_M2 * earthSunCorrection;
+}
+
+function nrelApproximateClearSkyDni(date) {
+  // Forstinger et al.'s NREL-documented approximation: DNIclear = 0.688 × ETR.
+  return 0.688 * extraterrestrialNormalIrradiance(date);
+}
+
 async function openMeteoClimatologyYear(request, year) {
   const target = new Date(request.targetTime);
   const centre = new Date(Date.UTC(year, target.getUTCMonth(), target.getUTCDate()));
@@ -219,19 +236,26 @@ function sampledClimatology(locationYears, yearList, request, pointIndex, startY
         dni: interpolate("direct_normal_irradiance_instant"), total: interpolate("cloud_cover"),
         low: interpolate("cloud_cover_low"), mid: interpolate("cloud_cover_mid"), high: interpolate("cloud_cover_high"),
       };
+      const clearSkyDni = nrelApproximateClearSkyDni(day);
+      sample.directBeamClearSkyRatio = sample.dni / clearSkyDni;
       if (Object.values(sample).every(Number.isFinite)) samples.push(sample);
     }
   }
   if (!samples.length) throw new Error("Open-Meteo archive returned no usable eclipse-time samples");
   const field = (name) => samples.map((sample) => sample[name]);
   const roundedPercentile = (name, fractionValue) => Math.round(percentile(field(name), fractionValue));
-  const brightSunCount = samples.filter((sample) => sample.dni >= 120).length;
-  const brightSunPct = Math.round(brightSunCount / samples.length * 100);
+  const nearClearCount = samples.filter((sample) => sample.directBeamClearSkyRatio >= CLEAR_SKY_RATIO_THRESHOLD).length;
+  const nearClearDirectSunPct = Math.round(nearClearCount / samples.length * 100);
   return {
     source: "ERA5 via Open-Meteo Historical Weather API", targetTime: request.targetTime,
     gridCell: { lat: request.points[pointIndex].lat, lng: request.points[pointIndex].lng, resolutionDeg: 0.25 },
     period: { startYear, endYear }, dateWindowDays: request.dateWindowDays,
-    sampleCount: samples.length, brightSunThresholdWm2: 120, brightSunPct, noBrightSunPct: 100 - brightSunPct,
+    sampleCount: samples.length,
+    clearSkyRatioThreshold: CLEAR_SKY_RATIO_THRESHOLD,
+    nearClearDirectSunPct,
+    belowNearClearDirectSunPct: 100 - nearClearDirectSunPct,
+    medianDirectBeamClearSkyRatioPct: Math.round(percentile(field("directBeamClearSkyRatio"), 0.5) * 100),
+    clearSkyDniMethod: "NREL-documented DNIclear = 0.688 × extraterrestrial normal irradiance",
     medianCloudCoverPct: roundedPercentile("total", 0.5), cloudCoverP25Pct: roundedPercentile("total", 0.25), cloudCoverP75Pct: roundedPercentile("total", 0.75),
     medianLowCloudPct: roundedPercentile("low", 0.5), medianMidCloudPct: roundedPercentile("mid", 0.5), medianHighCloudPct: roundedPercentile("high", 0.5),
   };

@@ -1,22 +1,22 @@
 (function () {
   const TEST_MODE = new URLSearchParams(window.location.search).get("test") === "1";
-  const BRIGHT_SUN_THRESHOLD_W_M2 = 120;
+  const CLEAR_SKY_RATIO_THRESHOLD = 0.85;
   const DEFAULT_START_YEAR = 2001;
   const DEFAULT_END_YEAR = 2025;
   const DATE_WINDOW_DAYS = 14;
   const memoryCache = new Map();
 
-  function rating(brightSunPct) {
-    if (brightSunPct >= 80) return "favourable";
-    if (brightSunPct >= 60) return "mixed";
+  function rating(nearClearDirectSunPct) {
+    if (nearClearDirectSunPct >= 70) return "favourable";
+    if (nearClearDirectSunPct >= 40) return "mixed";
     return "concerning";
   }
 
   function testResult(candidate, targetTime, startYear, endYear) {
     const coastalVariation = 8 * Math.sin((candidate.lng + 4) * 1.7) - 5 * Math.cos((candidate.lat - 37) * 1.9);
-    const brightSunPct = Math.max(35, Math.min(94, Math.round(76 + coastalVariation)));
+    const nearClearDirectSunPct = Math.max(20, Math.min(90, Math.round(58 + coastalVariation)));
     const sampleCount = (endYear - startYear + 1) * (DATE_WINDOW_DAYS * 2 + 1);
-    const standardBrightSunPct = Math.max(30, Math.min(96, brightSunPct - 2));
+    const standardNearClearPct = Math.max(15, Math.min(92, nearClearDirectSunPct - 2));
     return {
       ...candidate,
       climatology: {
@@ -25,29 +25,31 @@
         period: { startYear, endYear },
         dateWindowDays: DATE_WINDOW_DAYS,
         sampleCount,
-        brightSunThresholdWm2: BRIGHT_SUN_THRESHOLD_W_M2,
-        brightSunPct,
-        noBrightSunPct: 100 - brightSunPct,
-        medianCloudCoverPct: Math.round(100 - brightSunPct * 0.72),
-        cloudCoverP25Pct: Math.max(0, Math.round(70 - brightSunPct * 0.72)),
-        cloudCoverP75Pct: Math.min(100, Math.round(130 - brightSunPct)),
-        medianLowCloudPct: Math.max(0, Math.round(48 - brightSunPct * 0.45)),
-        medianMidCloudPct: Math.max(0, Math.round(38 - brightSunPct * 0.32)),
-        medianHighCloudPct: Math.max(0, Math.round(52 - brightSunPct * 0.4)),
+        clearSkyRatioThreshold: CLEAR_SKY_RATIO_THRESHOLD,
+        nearClearDirectSunPct,
+        belowNearClearDirectSunPct: 100 - nearClearDirectSunPct,
+        medianDirectBeamClearSkyRatioPct: nearClearDirectSunPct,
+        clearSkyDniMethod: "NREL-documented DNIclear = 0.688 × extraterrestrial normal irradiance",
+        medianCloudCoverPct: Math.round(100 - nearClearDirectSunPct * 0.72),
+        cloudCoverP25Pct: Math.max(0, Math.round(70 - nearClearDirectSunPct * 0.72)),
+        cloudCoverP75Pct: Math.min(100, Math.round(130 - nearClearDirectSunPct)),
+        medianLowCloudPct: Math.max(0, Math.round(48 - nearClearDirectSunPct * 0.45)),
+        medianMidCloudPct: Math.max(0, Math.round(38 - nearClearDirectSunPct * 0.32)),
+        medianHighCloudPct: Math.max(0, Math.round(52 - nearClearDirectSunPct * 0.4)),
         standardNormal: {
           period: { startYear: 1991, endYear: 2020 }, dateWindowDays: DATE_WINDOW_DAYS, sampleCount: 870,
-          brightSunThresholdWm2: BRIGHT_SUN_THRESHOLD_W_M2, brightSunPct: standardBrightSunPct, noBrightSunPct: 100 - standardBrightSunPct,
+          clearSkyRatioThreshold: CLEAR_SKY_RATIO_THRESHOLD, nearClearDirectSunPct: standardNearClearPct, belowNearClearDirectSunPct: 100 - standardNearClearPct,
         },
       },
-      climateRating: rating(brightSunPct),
-      score: brightSunPct,
+      climateRating: rating(nearClearDirectSunPct),
+      score: nearClearDirectSunPct,
     };
   }
 
   async function climatologyCandidates(candidates, targetTime, { startYear = DEFAULT_START_YEAR, endYear = DEFAULT_END_YEAR } = {}) {
-    if (!Array.isArray(candidates) || !candidates.length) throw new Error("provide at least one location for historical sunshine analysis");
+    if (!Array.isArray(candidates) || !candidates.length) throw new Error("provide at least one location for historical direct-sun analysis");
     if (TEST_MODE) return candidates.map((candidate) => testResult(candidate, targetTime, startYear, endYear));
-    if (!EclipseWeather.PROXY_URL) throw new Error("weather proxy is not configured; historical sunshine analysis needs its Cloud Run URL");
+    if (!EclipseWeather.PROXY_URL) throw new Error("weather proxy is not configured; historical direct-sun analysis needs its Cloud Run URL");
     const normalized = candidates.map((candidate) => ({ id: candidate.id, lat: Number(candidate.lat.toFixed(5)), lng: Number(candidate.lng.toFixed(5)) }));
     const key = JSON.stringify({ normalized, targetTime: new Date(targetTime).toISOString(), startYear, endYear });
     if (memoryCache.has(key)) return memoryCache.get(key);
@@ -66,7 +68,7 @@
       if (!Array.isArray(data.results) || data.results.length !== candidates.length) throw new Error("historical weather service returned incomplete location data");
       return candidates.map((candidate, index) => {
         const climatology = data.results[index];
-        return { ...candidate, climatology, climateRating: rating(climatology.brightSunPct), score: climatology.brightSunPct };
+        return { ...candidate, climatology, climateRating: rating(climatology.nearClearDirectSunPct), score: climatology.nearClearDirectSunPct };
       });
     })();
     memoryCache.set(key, pending);
@@ -76,7 +78,7 @@
 
   window.EclipseWeather = window.EclipseWeather || {};
   Object.assign(window.EclipseWeather, {
-    climatologyCandidates, climatologyRating: rating, BRIGHT_SUN_THRESHOLD_W_M2,
+    climatologyCandidates, climatologyRating: rating, CLEAR_SKY_RATIO_THRESHOLD,
     CLIMATOLOGY_START_YEAR: DEFAULT_START_YEAR, CLIMATOLOGY_END_YEAR: DEFAULT_END_YEAR, CLIMATOLOGY_DATE_WINDOW_DAYS: DATE_WINDOW_DAYS,
   });
 }());

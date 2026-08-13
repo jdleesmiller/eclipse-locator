@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260812-locationmessage1" />
+    <link rel="stylesheet" href="styles.css?v=20260813-sightlinedetails2" />
   </head>
   <body>
     <main>
@@ -108,7 +108,7 @@
           <p id="climate-headline" class="climate-headline">Loading comparable historical conditions…</p>
           <p id="climate-summary" class="note"></p>
           <details id="climate-details">
-            <summary>Historical sunshine details</summary>
+            <summary>Historical direct-sun details</summary>
             <div id="climate-detail-content"></div>
           </details>
           <p class="weather-source">History: <a href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels" target="_blank" rel="noreferrer">ERA5</a> via <a href="https://open-meteo.com/en/docs/historical-weather-api" target="_blank" rel="noreferrer">Open-Meteo</a>.</p>
@@ -144,6 +144,7 @@
             <div><span class="reading-label">Elevation</span><strong id="elevation">—</strong><small>above horizon</small></div>
           </div>
           <div id="phase-technical" class="phase-technical"></div>
+          <div id="sightline-technical" class="phase-technical sightline-technical"></div>
         </details>
 
         <p id="status" class="status" aria-live="polite"></p>
@@ -222,11 +223,11 @@
     <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
     <script src="config.js?v=20260811-weather3"></script>
     <script src="weather/aemet-client.js?v=20260811-general1"></script>
-    <script src="weather/corridor-analysis.js?v=20260813-layergeometry1"></script>
-    <script src="weather/climatology.js?v=20260813-brightsun1"></script>
+    <script src="weather/corridor-analysis.js?v=20260813-layergeometry2"></script>
+    <script src="weather/climatology.js?v=20260813-clearsky1"></script>
     <script src="weather/terrain-analysis.js?v=20260812-angularclearance1"></script>
     <script src="weather/solar-verification.js?v=20260811-weather6"></script>
-    <script src="weather/digest.js?v=20260812-mixedcomparison1"></script>
-    <script src="app.js?v=20260813-climatology1"></script>
+    <script src="weather/digest.js?v=20260813-clearsky1"></script>
+    <script src="app.js?v=20260813-clearsky1"></script>
   </body>
 </html>
