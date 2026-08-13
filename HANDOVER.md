@@ -32,9 +32,10 @@ The frontend is intentionally static: no bundler, framework or build step is req
 - `index.html`, `styles.css`, `app.js`: application shell, map/planning UI, URL state, saved places, AR and install UI.
 - `manifest.webmanifest`, `icons/`: installable web-app metadata. There is intentionally no service worker; installation does not imply offline operation.
 - `weather/solar-verification.js`: authoritative Astronomy Engine solar geometry and independent SunCalc comparison.
-- `weather/corridor-analysis.js`: ±5° cloud corridor through 60 km, sampled every 2.5 km.
+- `weather/corridor-analysis.js`: curvature-aware ±5° cloud corridor through nominal 3/8/15 km cloud layers, sampled every 2.5 km and capped at 150 km.
 - `weather/terrain-analysis.js`: dense terrain horizon across centre, ±0.25°, ±0.5° and contextual ±5° rays.
 - `weather/aemet-client.js`: direct AEMET WMS display plus numeric proxy client.
+- `weather/climatology.js`: ERA5 bright-sun climatology client and planning-period presentation.
 - `weather/digest.js`: saved-place enrichment, ranking and Markdown/JSON export.
 - `server/server.js`: public Cloud Run proxy for AEMET WCS/WMS sampling and AWS Terrain Tiles.
 - `tests/ui-smoke.mjs`: broad browser regression test, including the 2026 Gijón geometry reference and simulated AR.
@@ -121,10 +122,11 @@ After deployment:
 
 ## Known limitations and likely next work
 
-- Weather is Spain/AEMET-only and appears when the selected eclipse is between 3 hours in the past and 72 hours in the future (the proxy accepts a slightly wider −8/+78-hour window).
+- Short-range weather is Spain/AEMET-only and appears when the selected eclipse is between 3 hours in the past and 72 hours in the future (the proxy accepts a slightly wider −8/+78-hour window). Elsewhere, the UI falls back to ERA5 historical bright-sun frequency through the proxy.
+- Historical planning uses 2001–2025 with ±14 days around the eclipse date and also computes the WMO 1991–2020 standard period for progressive disclosure. Advance the planning period deliberately after validating a complete/finalized new season; the years are currently explicit constants rather than silently rolling.
 - Forecast scoring is a pragmatic sorting aid, not a validated probability of eclipse visibility. Raw cloud and terrain values should drive decisions.
 - AEMET exposes valid time but not model initialization, so apparent “trend” is comparison with the previous saved digest, not a reliably identified model-run change.
-- Cloud height is not plotted; the sightline strip is low-cloud percentage by distance, averaged across the corridor and non-cumulative.
+- Exact cloud height is not plotted; forecast scoring uses nominal low/middle/high layer boundaries, while the sightline strip is low-layer cloud percentage by distance and non-cumulative.
 - Terrain resolution cannot detect buildings, trees, narrow ridges or local structures. The main badge is green at ≥2° angular terrain clearance, concerning at 0–2°, and obstructed below 0°.
 - Current location is a point fix (`getCurrentPosition`), not continuous live tracking.
 - AR is an experimental camera overlay, not WebXR or survey-grade navigation. Sensor quality and browser support dominate accuracy.

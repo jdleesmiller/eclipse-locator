@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 const PORT = Number(process.env.PORT || 8080);
 const AEMET_WMS_URL = "https://ama.aemet.es/geoserver/wms";
 const AEMET_WCS_URL = "https://ama.aemet.es/geoserver/wcs";
+const OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 const FIELD_LAYERS = {
   total: "ama_netcdf:ama_pen_cob_nub",
   low: "ama_netcdf:ama_pen_cob_nub_bajas",
@@ -14,6 +15,7 @@ const FIELD_LAYERS = {
 const FIELD_COVERAGES = {
   total: "ama_netcdf__ama_pen_cob_nub",
   low: "ama_netcdf__ama_pen_cob_nub_bajas",
+  high: "ama_netcdf__ama_pen_cob_nub_altas",
 };
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || "https://jdlm.info,http://localhost:8080,http://127.0.0.1:8080").split(",").map((value) => value.trim()).filter(Boolean));
 const cache = new Map();
@@ -22,6 +24,7 @@ const terrainTileCache = new Map();
 const terrainTileInFlight = new Map();
 const CACHE_MS = 15 * 60 * 1000;
 const STALE_CACHE_MS = 2 * 60 * 60 * 1000;
+const CLIMATOLOGY_CACHE_MS = 30 * 24 * 60 * 60 * 1000;
 const FORECAST_PAST_MS = 8 * 60 * 60 * 1000;
 const FORECAST_FUTURE_MS = 78 * 60 * 60 * 1000;
 const MAX_TERRAIN_TILES_PER_REQUEST = 250;
@@ -53,10 +56,10 @@ function forecastTime(value) {
   return date.toISOString();
 }
 
-async function cachedRequest(key, producer) {
+async function cachedRequest(key, producer, freshMs = CACHE_MS, staleMs = STALE_CACHE_MS) {
   const cached = cache.get(key);
   const age = cached ? Date.now() - cached.createdAt : Infinity;
-  if (cached && age < CACHE_MS) return { ...cached.value, cached: true, stale: false };
+  if (cached && age < freshMs) return { ...cached.value, cached: true, stale: false };
   if (inFlight.has(key)) return inFlight.get(key);
   const pending = (async () => {
     try {
@@ -65,7 +68,7 @@ async function cachedRequest(key, producer) {
       if (cache.size > 300) cache.delete(cache.keys().next().value);
       return value;
     } catch (error) {
-      if (cached && age < STALE_CACHE_MS) {
+      if (cached && age < staleMs) {
         return { ...cached.value, cached: true, stale: true, warning: `Upstream refresh failed; serving ${Math.round(age / 60000)}-minute-old cached data` };
       }
       throw error;
@@ -114,7 +117,7 @@ async function readBody(request, maxBytes = 160000) {
 
 function parseRasterRequest(body) {
   const fields = Array.isArray(body?.fields) ? body.fields : [];
-  if (!fields.length || fields.length > 2 || fields.some((field) => !FIELD_COVERAGES[field])) throw new Error("fields must use total or low");
+  if (!fields.length || fields.length > 3 || fields.some((field) => !FIELD_COVERAGES[field])) throw new Error("fields must use total, low or high");
   const times = Array.isArray(body?.times) ? body.times.map(forecastTime) : [];
   if (!times.length || times.length > 2) throw new Error("times must contain one or two ISO-8601 forecast valid times");
   const points = Array.isArray(body?.points) ? body.points.map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) })) : [];
@@ -131,6 +134,128 @@ function parseTerrainRequest(body) {
   if (!points.length || points.length > 2500) throw new Error("provide between 1 and 2500 terrain points");
   if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -85 || lat > 85 || lng < -180 || lng > 180)) throw new Error("terrain points must use valid Web Mercator coordinates");
   return { points };
+}
+
+function parseClimatologyRequest(body) {
+  const points = Array.isArray(body?.points) ? body.points.map((point) => ({ id: String(point.id || ""), lat: Number(point.lat), lng: Number(point.lng) })) : [];
+  if (!points.length || points.length > 9) throw new Error("provide between 1 and 9 climatology points");
+  if (points.some(({ lat, lng }) => !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180)) throw new Error("climatology points must use valid global coordinates");
+  const target = new Date(body?.targetTime);
+  if (Number.isNaN(target.getTime())) throw new Error("climatology targetTime must be an ISO-8601 time");
+  const startYear = Number(body?.startYear);
+  const endYear = Number(body?.endYear);
+  if (!Number.isInteger(startYear) || !Number.isInteger(endYear) || startYear < 1940 || endYear > new Date().getUTCFullYear() || endYear < startYear || endYear - startYear + 1 > 30) throw new Error("climatology years must specify at most 30 years from 1940 through the present");
+  const dateWindowDays = Number(body?.dateWindowDays);
+  if (!Number.isInteger(dateWindowDays) || dateWindowDays < 0 || dateWindowDays > 31) throw new Error("climatology dateWindowDays must be between 0 and 31");
+  return { points, targetTime: target.toISOString(), startYear, endYear, dateWindowDays };
+}
+
+function percentile(values, fraction) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  const weight = position - lower;
+  return sorted[lower + 1] === undefined ? sorted[lower] : sorted[lower] * (1 - weight) + sorted[lower + 1] * weight;
+}
+
+function isoDate(date) { return date.toISOString().slice(0, 10); }
+
+async function openMeteoClimatologyYear(request, year) {
+  const target = new Date(request.targetTime);
+  const centre = new Date(Date.UTC(year, target.getUTCMonth(), target.getUTCDate()));
+  const start = new Date(centre.getTime() - request.dateWindowDays * 86400000);
+  const end = new Date(centre.getTime() + request.dateWindowDays * 86400000);
+  const params = new URLSearchParams({
+    latitude: request.points.map((point) => point.lat.toFixed(5)).join(","),
+    longitude: request.points.map((point) => point.lng.toFixed(5)).join(","),
+    start_date: isoDate(start), end_date: isoDate(end), timezone: "GMT", models: "era5",
+    hourly: "direct_normal_irradiance_instant,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high",
+  });
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(`${OPEN_METEO_ARCHIVE_URL}?${params}`, { signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error(`Open-Meteo archive returned ${response.status}`);
+      const data = await response.json();
+      const locations = Array.isArray(data) ? data : [data];
+      if (locations.length !== request.points.length) throw new Error("Open-Meteo archive returned an unexpected number of locations");
+      return locations;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError;
+}
+
+function sampledClimatology(locationYears, yearList, request, pointIndex, startYear = request.startYear, endYear = request.endYear) {
+  const target = new Date(request.targetTime);
+  const hour = target.getUTCHours();
+  const fraction = (target.getUTCMinutes() * 60 + target.getUTCSeconds()) / 3600;
+  const samples = [];
+  for (let yearIndex = 0; yearIndex < locationYears.length; yearIndex += 1) {
+    const year = yearList[yearIndex];
+    if (year < startYear || year > endYear) continue;
+    const location = locationYears[yearIndex][pointIndex];
+    const hourly = location?.hourly;
+    if (!Array.isArray(hourly?.time)) continue;
+    const indices = new Map(hourly.time.map((time, index) => [time, index]));
+    const centre = new Date(Date.UTC(year, target.getUTCMonth(), target.getUTCDate()));
+    for (let offset = -request.dateWindowDays; offset <= request.dateWindowDays; offset += 1) {
+      const day = new Date(centre.getTime() + offset * 86400000);
+      const beforeTime = `${isoDate(day)}T${String(hour).padStart(2, "0")}:00`;
+      const afterDate = new Date(day.getTime() + (hour === 23 ? 86400000 : 0));
+      const afterTime = `${isoDate(afterDate)}T${String((hour + 1) % 24).padStart(2, "0")}:00`;
+      const before = indices.get(beforeTime);
+      const after = indices.get(afterTime);
+      if (before === undefined || after === undefined) continue;
+      const interpolate = (field) => {
+        const a = Number(hourly[field]?.[before]);
+        const b = Number(hourly[field]?.[after]);
+        return Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * fraction : null;
+      };
+      const sample = {
+        dni: interpolate("direct_normal_irradiance_instant"), total: interpolate("cloud_cover"),
+        low: interpolate("cloud_cover_low"), mid: interpolate("cloud_cover_mid"), high: interpolate("cloud_cover_high"),
+      };
+      if (Object.values(sample).every(Number.isFinite)) samples.push(sample);
+    }
+  }
+  if (!samples.length) throw new Error("Open-Meteo archive returned no usable eclipse-time samples");
+  const field = (name) => samples.map((sample) => sample[name]);
+  const roundedPercentile = (name, fractionValue) => Math.round(percentile(field(name), fractionValue));
+  const brightSunCount = samples.filter((sample) => sample.dni >= 120).length;
+  const brightSunPct = Math.round(brightSunCount / samples.length * 100);
+  return {
+    source: "ERA5 via Open-Meteo Historical Weather API", targetTime: request.targetTime,
+    gridCell: { lat: request.points[pointIndex].lat, lng: request.points[pointIndex].lng, resolutionDeg: 0.25 },
+    period: { startYear, endYear }, dateWindowDays: request.dateWindowDays,
+    sampleCount: samples.length, brightSunThresholdWm2: 120, brightSunPct, noBrightSunPct: 100 - brightSunPct,
+    medianCloudCoverPct: roundedPercentile("total", 0.5), cloudCoverP25Pct: roundedPercentile("total", 0.25), cloudCoverP75Pct: roundedPercentile("total", 0.75),
+    medianLowCloudPct: roundedPercentile("low", 0.5), medianMidCloudPct: roundedPercentile("mid", 0.5), medianHighCloudPct: roundedPercentile("high", 0.5),
+  };
+}
+
+async function climatologyValues(request) {
+  const gridded = { ...request, points: request.points.map((point) => ({ ...point, lat: Math.round(point.lat * 4) / 4, lng: Math.round(point.lng * 4) / 4 })) };
+  const cacheShape = { ...gridded, points: gridded.points.map(({ lat, lng }) => ({ lat, lng })) };
+  const key = `climatology:${JSON.stringify(cacheShape)}`;
+  return cachedRequest(key, async () => {
+    const firstYear = Math.min(1991, gridded.startYear);
+    const lastYear = Math.max(2020, gridded.endYear);
+    const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+    const locationYears = await mapLimit(years, 5, (year) => openMeteoClimatologyYear(gridded, year));
+    const results = gridded.points.map((_, pointIndex) => {
+      const planning = sampledClimatology(locationYears, years, gridded, pointIndex);
+      planning.standardNormal = sampledClimatology(locationYears, years, gridded, pointIndex, 1991, 2020);
+      return planning;
+    });
+    return {
+      source: "ERA5 via Open-Meteo Historical Weather API", retrievedAt: new Date().toISOString(),
+      results, cached: false, stale: false,
+    };
+  }, CLIMATOLOGY_CACHE_MS, CLIMATOLOGY_CACHE_MS * 2);
 }
 
 function tilePosition(point, zoom = 11) {
@@ -326,12 +451,16 @@ const server = http.createServer(async (request, response) => {
       const result = await terrainValues(parseTerrainRequest(await readBody(request)));
       return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=3600" });
     }
+    if (request.method === "POST" && url.pathname === "/climatology") {
+      const result = await climatologyValues(parseClimatologyRequest(await readBody(request)));
+      return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=2592000, stale-if-error=2592000" });
+    }
     if (request.method !== "GET" || url.pathname !== "/weather-points") return json(response, 404, { error: "Not found" }, cors);
     const parsed = parseRequest(url);
     const result = await weatherPoints(parsed);
     return json(response, 200, result, { ...cors, "Cache-Control": "public, max-age=900, stale-if-error=7200" });
   } catch (error) {
-    const clientError = /fields|times must|time must|forecast times|forecast window|points must|provide between|request body|Content-Type|unique tiles/.test(error.message);
+    const clientError = /fields|times must|time must|forecast times|forecast window|points must|provide between|request body|Content-Type|unique tiles|climatology/.test(error.message);
     return json(response, clientError ? 400 : 502, { error: error.message }, cors);
   }
 });

@@ -146,6 +146,11 @@ button.inline-link[hidden] { display: none; }
 .digest-actions button { min-height: 36px; padding: 5px; font-size: 10px; }
 .weather-source { margin: 8px 0 0; color: var(--muted); font-size: 9px; }
 .weather-source a { color: #a9cce6; }
+.climate-headline { margin: 8px 0 3px; color: white; font-size: 13px; line-height: 1.35; }
+.climate-card details { margin-top: 9px; color: var(--muted); font-size: 10px; }
+.climate-card details summary { cursor: pointer; color: #b9d8ef; }
+.climate-detail-grid { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; margin-top: 8px; }
+.climate-detail-grid b { color: white; text-align: right; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; }
 .section-heading h2 { margin: 0; font-size: 14px; }
 .section-heading span { color: var(--muted); font-size: 10px; }

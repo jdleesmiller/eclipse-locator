@@ -28,15 +28,18 @@ AEMET OpenData itself is not used. Its July 2025 FAQ says numerical-model output
 The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript response used for numeric point sampling, so numeric corridor analysis uses the small proxy in `server/`:
 
 - `weather/aemet-client.js` — WMS overlay configuration and batched proxy access.
-- `weather/corridor-analysis.js` — geodesic ±5° wedge construction through 60 km, 2.5 km sampling, hourly/interpolated metrics and weather scoring.
+- `weather/corridor-analysis.js` — curvature-aware, solar-elevation-dependent ±5° wedge construction, 2.5 km sampling, cloud-layer metrics and weather scoring.
 - `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
 - `weather/solar-verification.js` — authoritative Astronomy Engine geometry plus an independent SunCalc approximation check.
 - `weather/digest.js` — JSON and Markdown digest generation.
+- `weather/climatology.js` — ERA5 bright-sun climatology client and ratings outside short-forecast coverage.
 - Browser local storage — per-eclipse viewing-location shortlist and user notes; no locale-specific candidates are built into the app.
 
 Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
 
-Numeric analysis is deliberately on demand. Opening the selected place's **Sightline profile** lazily requests its cloud corridor; refreshing the saved-place comparison batches eligible shortlisted corridors. Saved locations outside the AEMET area remain in the comparison with terrain-only results. For the selected eclipse time, the browser uses the two surrounding UTC-hour grids and sends the wedge coordinates in bounded regional batches. The proxy downloads four small regional rasters—total and low cloud at the two hours—with bounded per-instance concurrency and three-attempt upstream retry, then samples the requested coordinates locally. Identical in-flight requests are coalesced, successful weather responses are cached in memory for 15 minutes, and cached data up to two hours old can be served if an upstream refresh fails. This replaces more than a thousand potential `GetFeatureInfo` calls while preserving the existing WMS pipeline and point endpoint. Merely moving the map does not fetch numeric data.
+Numeric analysis is deliberately on demand. Opening the selected place's **Sightline profile** lazily requests its cloud corridor; refreshing the saved-place comparison batches eligible shortlisted corridors. For the selected eclipse time, the browser uses the two surrounding UTC-hour grids and sends the wedge coordinates in bounded regional batches. The proxy downloads total, low and high regional rasters at the two hours with bounded concurrency and retry, then samples the requested coordinates locally. Identical in-flight requests are coalesced, successful weather responses are cached in memory for 15 minutes, and cached data up to two hours old can be served if an upstream refresh fails. Merely moving the map does not fetch numeric data.
+
+Outside applicable AEMET forecast coverage, the browser sends up to nine locations to the proxy's `/climatology` endpoint. The proxy makes one multi-location Open-Meteo ERA5 request per historical year with bounded concurrency and caches the compact result for 30 days. It samples the eclipse-time UTC hour across ±14 days per year, linearly interpolating between surrounding hourly values. The planning period is 2001–2025; the same upstream batch calculates the WMO 1991–2020 standard normal for progressive disclosure.
 
 All terrain is sampled from the public AWS Terrain Tiles Terrarium pyramid at zoom 11 (about 55 m pixels at Asturias). The proxy coalesces identical tile downloads, applies a global per-instance upstream-concurrency limit, retry and an in-memory tile cache, and rejects requests spanning more than 250 unique tiles. The candidate analysis reports the centre-ray horizon and maxima within ±0.25°, ±0.5° and ±5°. Only the ±0.5° maximum drives clearance/classification; ±5° is contextual. It uses 100 m steps through the first 2 km because nearby ridges dominate this low-Sun problem. The main profile and candidate wedges share the same elevation client and the same 1.7 m eye-height and spherical-Earth-curvature functions.
 
@@ -64,18 +67,19 @@ Then open `http://localhost:8080/?weatherProxy=http://localhost:8787`. The query
 
 ## Metrics and score
 
-For total and low cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5° through 60 km. The non-cumulative sightline strip therefore covers the full map arrow. At 10, 25 and 50 km it reports centre-ray mean plus wedge mean, 75th percentile and maximum. Spatial values use the nearest AEMET raster cell.
+For forecast cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5°. Corridor length comes from solar elevation, spherical-Earth curvature and nominal layer tops at 3 km (low), 8 km (middle) and 15 km (high), capped at 150 km. Numeric scoring samples AEMET low cloud over the low-layer segment, total cloud over the middle-layer segment and high cloud over the high-layer segment. Spatial values use the nearest AEMET raster cell; atmospheric refraction is excluded.
+
+The historical headline is the fraction of samples whose instantaneous direct-normal irradiance is at least 120 W/m², the WMO threshold for bright sunshine. Median total/low/middle/high cloud, total-cloud interquartile range, sample count and the standard-period comparison are disclosed in details. This is climatology rather than a forecast, and ERA5's approximately 0.25° grid cannot resolve coastal or mountain microclimates.
 
 Both UTC-hour fields surrounding eclipse maximum are retained. The target estimate is a point-by-point linear interpolation using the elapsed fraction of that hour; the UI and digest label it as an approximation, not an AEMET output time.
 
 The provisional score is `100 − penalty`, where the penalty is:
 
 ```text
-38% low-cloud wedge mean, first 10 km
-22% low-cloud wedge mean, first 25 km
-16% total-cloud wedge mean, first 25 km
-14% total-cloud wedge mean, first 50 km
-10% low-cloud wedge p75, first 25 km
+45% low-cloud mean over the low-layer segment
+30% total-cloud mean over the middle-layer segment
+20% high-cloud mean over the high-layer segment
+5% maximum layer p75
 ```
 
 This score is only a compact sorting aid. Raw components remain visible and should drive decisions. Terrain is classified separately; a terrain-blocked site is always marked unsuitable and cannot rank first. A previous digest is saved in local storage. Five target-time cloud deltas are averaged; more than +10 percentage points is worsening, less than −10 is improving, and the middle range is broadly unchanged.
@@ -86,7 +90,7 @@ Astronomy Engine 2.1.19 is authoritative throughout the map, AR, weather wedges 
 
 ## Limitations and next steps
 
-- The cloud UI is shown only for observers in the approximate mainland-Spain/Balearic bounding box and eclipses from three hours ago through 72 hours ahead. Terrain remains global.
+- The AEMET cloud UI is shown only for observers in the approximate mainland-Spain/Balearic bounding box and eclipses from three hours ago through 72 hours ahead. ERA5 historical sunshine and terrain are global fallbacks.
 - The WMS does not expose the model initialization time, so genuine run-to-run comparison cannot be identified reliably yet.
 - Cloud-base is available as a visual overlay, but line-of-sight/cloud-base intersection metrics are not included.
 - Linear time interpolation smooths percentages but cannot predict cloud advection or formation between model hours.

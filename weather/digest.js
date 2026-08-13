@@ -33,19 +33,26 @@
   function overallFor(candidate) {
     const terrain = candidate.terrain.classification;
     const weather = candidate.weatherRating;
+    const climate = candidate.climateRating;
     let recommendation;
     if (terrain === "blocked") recommendation = "unsuitable";
+    else if (!candidate.weather && candidate.climatology) {
+      if (terrain === "marginal" || climate === "concerning") recommendation = "risky";
+      else if ((terrain === "comfortable" || terrain === "acceptable") && climate === "favourable") recommendation = "strong candidate";
+      else recommendation = "viable";
+    }
     else if (!candidate.weather) recommendation = terrain === "marginal" ? "risky" : "terrain only";
     else if (terrain === "marginal" || weather === "poor") recommendation = "risky";
     else if ((terrain === "comfortable" || terrain === "acceptable") && (weather === "excellent" || weather === "good")) recommendation = "strong candidate";
     else recommendation = "viable";
-    return { weatherRating: weather, terrainRating: terrain, trendRating: candidate.trend.classification, recommendation };
+    return { weatherRating: weather, climateRating: climate || null, terrainRating: terrain, trendRating: candidate.trend.classification, recommendation };
   }
 
   function lowCloudDistanceProfile(candidate) {
     const groups = new Map();
+    const lowLayerEndKm = candidate.weather?.geometry?.layers?.low?.toKm ?? Infinity;
     for (const sample of candidate.debug?.samples || []) {
-      if (!Number.isFinite(sample.distanceKm) || !Number.isFinite(sample.lowTarget)) continue;
+      if (!Number.isFinite(sample.distanceKm) || sample.distanceKm > lowLayerEndKm || !Number.isFinite(sample.lowTarget)) continue;
       const values = groups.get(sample.distanceKm) || [];
       values.push(sample.lowTarget);
       groups.set(sample.distanceKm, values);
@@ -66,16 +73,20 @@
   }
 
   function createDigest({ sun, candidates, targetTime, warnings = [], includeDebug = false }) {
-    const times = candidates.find((candidate) => candidate.weather)?.weather.times || EclipseWeather.forecastWindow(targetTime);
+    const forecastCandidate = candidates.find((candidate) => candidate.weather);
+    const hasClimatology = candidates.some((candidate) => candidate.climatology);
+    const times = forecastCandidate?.weather.times || EclipseWeather.forecastWindow(targetTime);
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       retrievedAt: new Date().toISOString(),
-      source: "AEMET AMA HARMONIE-AROME public WCS/WMS and AWS Terrain Tiles",
-      dataset: "ama_netcdf total/low cloud cover; Terrarium EU-DEM terrain tiles",
+      source: `${forecastCandidate ? "AEMET AMA HARMONIE-AROME public WCS/WMS; " : ""}${hasClimatology ? "ERA5 via Open-Meteo; " : ""}AWS Terrain Tiles`,
+      dataset: `${forecastCandidate ? "ama_netcdf total/low/high cloud cover; " : ""}${hasClimatology ? "ERA5 direct-normal irradiance and total/low/middle/high cloud; " : ""}Terrarium terrain tiles`,
       modelRun: null,
       modelRunNote: "Initialization time is not exposed by the public AEMET services.",
       validTimes: times,
-      interpolation: { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: times.fractionAfter, label: "Target-time approximation; not an AEMET model output time" },
+      interpolation: forecastCandidate
+        ? { applied: true, method: "linear interpolation of each grid-cell percentage", fractionAfter: times.fractionAfter, label: "Target-time approximation; not an AEMET model output time" }
+        : { applied: false, method: null, fractionAfter: null, label: "Historical eclipse-time climatology" },
       sun: {
         azimuthDeg: Number(sun.azimuthDeg.toFixed(2)), elevationDeg: Number(sun.elevationDeg.toFixed(2)),
         calculationEngine: "Astronomy Engine 2.1.19",
@@ -90,6 +101,7 @@
         sun: { azimuthDeg: Number(candidate.azimuthDeg.toFixed(2)), elevationDeg: Number(candidate.sunElevationDeg.toFixed(2)) },
         terrain: includeDebug ? candidate.terrain : { ...candidate.terrain, debugSamples: undefined },
         weather: candidate.weather,
+        climatology: candidate.climatology || null,
         cloudUnavailableReason: candidate.cloudUnavailableReason || null,
         lowCloudDistanceProfile: lowCloudDistanceProfile(candidate),
         trend: candidate.trend,
@@ -103,7 +115,7 @@
   function digestMarkdown(digest) {
     const lines = [
       "# Eclipse weather digest",
-      `Target: ${digest.validTimes.target} (interpolated approximation between AEMET ${digest.validTimes.before} and ${digest.validTimes.after} grids)`,
+      `Target: ${digest.validTimes.target}${digest.interpolation.applied ? ` (interpolated approximation between AEMET ${digest.validTimes.before} and ${digest.validTimes.after} grids)` : " (historical eclipse-time climatology)"}`,
       `Sun: ${digest.sun.azimuthDeg}° az / ${digest.sun.elevationDeg}° alt · wedge ±${digest.wedge.halfWidthDeg}°`, "",
     ];
     for (const candidate of digest.candidates) {
@@ -114,7 +126,9 @@
         ...(candidate.weather ? (() => {
           const target = candidate.weather.target;
           return [`Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`];
-        })() : [`Weather: unavailable (${candidate.cloudUnavailableReason || "outside the available forecast coverage"}).`]),
+        })() : candidate.climatology
+          ? [`Historical outlook: ${candidate.climatology.brightSunPct}% bright-sun frequency (${candidate.climatology.period.startYear}–${candidate.climatology.period.endYear}, ±${candidate.climatology.dateWindowDays} days, ${candidate.climatology.sampleCount} samples); median total cloud ${candidate.climatology.medianCloudCoverPct}%.`]
+          : [`Weather: unavailable (${candidate.cloudUnavailableReason || "outside the available forecast coverage"}).`]),
         `Terrain: ${terrain.classification}; centre ${terrain.centreRayHorizonDeg}°, ±0.25° max ${terrain.within025DegMaxAngleDeg}°, ±0.5° max ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°; ±5° context ${terrain.contextWedgeMaxAngleDeg}°.`,
         `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",
       );

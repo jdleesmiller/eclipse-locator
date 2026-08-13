@@ -33,7 +33,7 @@ const state = {
   terrainSamples: [],
   terrainRequest: null,
   profileRangeKm: 5,
-  weather: { layer: null, results: null, digest: null, debug: false, indicatorRequest: 0, profileRequest: 0, profileLoadingId: null, profileAttemptedId: null, profileError: null },
+  weather: { layer: null, results: null, digest: null, debug: false, indicatorRequest: 0, climateRequest: 0, climateResult: null, profileRequest: 0, profileLoadingId: null, profileAttemptedId: null, profileError: null },
   ar: {
     active: false,
     stream: null,
@@ -129,6 +129,11 @@ const weatherLayerNote = document.querySelector("#weather-layer-note");
 const weatherMapStatus = document.querySelector("#weather-map-status");
 const weatherLegend = document.querySelector("#weather-legend");
 const cloudResult = document.querySelector("#cloud-result");
+const climateCard = document.querySelector("#climate-card");
+const climateResult = document.querySelector("#climate-result");
+const climateHeadline = document.querySelector("#climate-headline");
+const climateSummary = document.querySelector("#climate-summary");
+const climateDetailContent = document.querySelector("#climate-detail-content");
 const weatherStatus = document.querySelector("#weather-status");
 const weatherResults = document.querySelector("#weather-results");
 const weatherDigest = document.querySelector("#weather-digest");
@@ -670,15 +675,57 @@ async function updateCloudIndicator() {
   }
 }
 
+function renderClimateIndicator(climatology) {
+  const classification = climatology.brightSunPct >= 80 ? "clear" : climatology.brightSunPct >= 60 ? "concerning" : "blocked";
+  const label = EclipseWeather.climatologyRating(climatology.brightSunPct);
+  climateResult.className = `result-badge ${classification}`;
+  climateResult.textContent = `${label[0].toUpperCase()}${label.slice(1)} · ${climatology.brightSunPct}%`;
+  climateHeadline.innerHTML = `Bright sunshine occurred in <strong>${climatology.brightSunPct}%</strong> of comparable observations.`;
+  climateSummary.textContent = `${climatology.period.startYear}–${climatology.period.endYear} · ±${climatology.dateWindowDays} days · eclipse-time hour · ${climatology.sampleCount} samples`;
+  climateDetailContent.innerHTML = `<div class="climate-detail-grid">
+    <span>No bright sunshine</span><b>${climatology.noBrightSunPct}%</b>
+    <span>Median total cloud</span><b>${climatology.medianCloudCoverPct}%</b>
+    <span>Total-cloud middle 50%</span><b>${climatology.cloudCoverP25Pct}–${climatology.cloudCoverP75Pct}%</b>
+    <span>Median low / middle / high cloud</span><b>${climatology.medianLowCloudPct} / ${climatology.medianMidCloudPct} / ${climatology.medianHighCloudPct}%</b>
+    <span>1991–2020 standard normal</span><b>${climatology.standardNormal?.brightSunPct ?? "—"}% bright sunshine</b>
+  </div><p>“Bright sunshine” uses the WMO threshold of direct-normal irradiance ≥${climatology.brightSunThresholdWm2} W/m². This is historical context, not a forecast. ERA5 grid resolution is approximately 25 km.</p>`;
+}
+
+async function updateClimateIndicator() {
+  const request = ++state.weather.climateRequest;
+  climateResult.className = "result-badge";
+  climateResult.textContent = "Checking…";
+  climateHeadline.textContent = "Loading comparable historical conditions…";
+  climateSummary.textContent = "";
+  climateDetailContent.replaceChildren();
+  try {
+    const id = locationId(state.observer);
+    const [result] = await EclipseWeather.climatologyCandidates([{ id, lat: state.observer.lat, lng: state.observer.lng }], state.viewingDate);
+    if (request !== state.weather.climateRequest) return;
+    state.weather.climateResult = result.climatology;
+    renderClimateIndicator(result.climatology);
+  } catch (error) {
+    if (request !== state.weather.climateRequest) return;
+    climateResult.className = "result-badge";
+    climateResult.textContent = "Unavailable";
+    climateHeadline.textContent = "Historical sunshine could not be loaded.";
+    climateSummary.textContent = error.message;
+  }
+}
+
 function refreshWeatherAvailability() {
   weatherCard.hidden = !weatherApplies();
+  climateCard.hidden = weatherApplies();
   if (weatherApplies()) {
     updateWeatherOverlay();
     updateCloudIndicator();
   }
-  else if (weatherLayer && map) {
-    map.removeLayer(weatherLayer);
-    weatherLayer = null;
+  else {
+    if (!weatherApplies()) updateClimateIndicator();
+    if (weatherLayer && map) {
+      map.removeLayer(weatherLayer);
+      weatherLayer = null;
+    }
   }
 }
 
@@ -700,7 +747,7 @@ function renderWeatherResults(results) {
       const beforeLabel = formatUtcHour(times.before);
       const afterLabel = formatUtcHour(times.after);
       item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.weatherRating} weather (${result.score}/100) · ${terrain.classification} terrain · ${trendLabel}</span></button>
-      <small><b>${targetLabel}:</b> low cloud here ${target.lowCloudAtObserverPct}% · wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+      <small><b>${targetLabel}:</b> low / middle / high sightline cloud ${target.layers.low.wedgeMean}/${target.layers.middle.wedgeMean}/${target.layers.high.wedgeMean}% · sampled to ${result.weather.geometry.maxDistanceKm} km<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
       ${notesDetail}
       <details><summary>Hourly and wedge details</summary><div class="weather-detail-grid">
         <span></span><b>${beforeLabel}</b><b>${formatUtcHour(times.target)}*</b><b>${afterLabel}</b>
@@ -708,8 +755,16 @@ function renderWeatherResults(results) {
         <span>Low 10 km wedge</span><span>${result.weather.before.low.km10.wedgeMean}%</span><span>${target.low.km10.wedgeMean}%</span><span>${result.weather.after.low.km10.wedgeMean}%</span>
         <span>Low 25 km wedge</span><span>${result.weather.before.low.km25.wedgeMean}%</span><span>${target.low.km25.wedgeMean}%</span><span>${result.weather.after.low.km25.wedgeMean}%</span>
         <span>Low 50 km wedge</span><span>${result.weather.before.low.km50.wedgeMean}%</span><span>${target.low.km50.wedgeMean}%</span><span>${result.weather.after.low.km50.wedgeMean}%</span>
-      </div><p><b>Target low cloud</b> centre mean 10/25/50 km ${target.low.km10.centreMean}/${target.low.km25.centreMean}/${target.low.km50.centreMean}% · wedge p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}% · max ${target.low.km10.wedgeMax}/${target.low.km25.wedgeMax}/${target.low.km50.wedgeMax}%.</p><p><b>Target total cloud</b> centre mean ${target.total.km10.centreMean}/${target.total.km25.centreMean}/${target.total.km50.centreMean}% · wedge mean ${target.total.km10.wedgeMean}/${target.total.km25.wedgeMean}/${target.total.km50.wedgeMean}% · p75 ${target.total.km10.wedgeP75}/${target.total.km25.wedgeP75}/${target.total.km50.wedgeP75}% · max ${target.total.km10.wedgeMax}/${target.total.km25.wedgeMax}/${target.total.km50.wedgeMax}%.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
+      </div><p><b>Curvature-aware cloud layers</b><br>Low 0–3 km altitude: ${target.layers.low.wedgeMean}% mean over 0–${target.layers.low.toKm} km.<br>Middle 3–8 km altitude: ${target.layers.middle.wedgeMean}% mean over ${target.layers.middle.fromKm}–${target.layers.middle.toKm} km.<br>High 8–15 km altitude: ${target.layers.high.wedgeMean}% mean over ${target.layers.high.fromKm}–${target.layers.high.toKm} km.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p><p>* Linear interpolation; not an AEMET model output time.</p></details>
       <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${result.debug.samples.length} cloud / ${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ cloud: result.debug.samples, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
+    } else if (result.climatology) {
+      const climate = result.climatology;
+      item.classList.add("climatology-result");
+      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.climateRating} historical outlook (${climate.brightSunPct}% bright sunshine) · ${terrain.classification} terrain</span></button>
+        <small><b>Historical outlook:</b> bright sunshine in ${climate.brightSunPct}% of comparable observations · no bright sunshine ${climate.noBrightSunPct}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+        ${notesDetail}
+        <details><summary>Historical sunshine details</summary><p>${climate.period.startYear}–${climate.period.endYear} · ±${climate.dateWindowDays} days · eclipse-time hour · ${climate.sampleCount} samples.</p><p><b>Total cloud</b> median ${climate.medianCloudCoverPct}%, middle 50% ${climate.cloudCoverP25Pct}–${climate.cloudCoverP75Pct}%. <b>Median low / middle / high cloud</b> ${climate.medianLowCloudPct}/${climate.medianMidCloudPct}/${climate.medianHighCloudPct}%.</p><p><b>1991–2020 standard normal:</b> ${climate.standardNormal?.brightSunPct ?? "—"}% bright sunshine (${climate.standardNormal?.sampleCount ?? "—"} samples).</p><p>Bright sunshine uses direct-normal irradiance ≥${climate.brightSunThresholdWm2} W/m². Historical context is not a forecast.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
+        <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ climatology: climate, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
     } else {
       item.classList.add("terrain-only-result");
       item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>cloud unavailable · ${terrain.classification} terrain</span></button>
@@ -746,11 +801,15 @@ function loadPreviousWeatherDigest() {
 
 function buildWeatherDigest(results) {
   const sun = EclipseWeather.verifySunPosition(state.viewingDate, state.observer.lat, state.observer.lng);
+  const hasForecast = results.some((candidate) => candidate.weather);
   return EclipseWeather.createDigest({
     sun, candidates: results, targetTime: state.viewingDate, includeDebug: state.weather.debug,
     warnings: [
-      "Target-time values are linearly interpolated approximations between the surrounding hourly AEMET grids.",
-      "Model initialization time is not exposed by AEMET's public services.",
+      ...(hasForecast ? [
+        "Target-time values are linearly interpolated approximations between the surrounding hourly AEMET grids.",
+        "Model initialization time is not exposed by AEMET's public services.",
+      ] : []),
+      "Historical bright-sun frequency uses ERA5 direct-normal irradiance and the WMO 120 W/m² threshold; it is climatology, not a forecast.",
       "Cloud values use nearest model raster cells; terrain excludes buildings, trees and atmospheric refraction.",
     ],
   });
@@ -764,9 +823,10 @@ function weatherCandidateBatches(candidates) {
       const combined = [...items, candidate];
       const latitudes = combined.map((item) => item.lat);
       const longitudes = combined.map((item) => item.lng);
-      // Leave room inside the proxy's four-degree limit for the 60 km wedge.
-      return Math.max(...latitudes) - Math.min(...latitudes) <= 2.8
-        && Math.max(...longitudes) - Math.min(...longitudes) <= 2.8;
+      // Leave room inside the proxy's four-degree raster limit for a
+      // curvature-aware corridor that can extend as far as 150 km.
+      return Math.max(...latitudes) - Math.min(...latitudes) <= 1
+        && Math.max(...longitudes) - Math.min(...longitudes) <= 1;
     });
     if (batch) batch.push(candidate);
     else batches.push([candidate]);
@@ -805,14 +865,25 @@ async function analyzeWeather() {
       }
     }
     const cloudById = new Map(cloudResults.map((candidate) => [candidate.id, candidate]));
-    const terrainCandidates = preparedCandidates.map((candidate) => cloudById.get(candidate.id) || {
+    const fallbackCandidates = preparedCandidates.filter((candidate) => !cloudById.has(candidate.id));
+    const climateById = new Map();
+    if (fallbackCandidates.length) {
+      weatherStatus.textContent = `Loading historical bright-sun frequencies for ${fallbackCandidates.length} place${fallbackCandidates.length === 1 ? "" : "s"}…`;
+      try {
+        const climateResults = await EclipseWeather.climatologyCandidates(fallbackCandidates, state.viewingDate);
+        climateResults.forEach((candidate) => climateById.set(candidate.id, candidate));
+      } catch (error) {
+        fallbackCandidates.forEach((candidate) => cloudFailures.set(candidate.id, `Historical sunshine analysis failed: ${error.message}`));
+      }
+    }
+    const terrainCandidates = preparedCandidates.map((candidate) => cloudById.get(candidate.id) || climateById.get(candidate.id) || {
       ...candidate,
       weather: null,
       weatherRating: "unavailable",
       score: null,
       debug: { samples: [] },
       cloudUnavailableReason: cloudFailures.get(candidate.id)
-        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area." : "The eclipse is outside the short cloud-forecast window."),
+        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area and historical sunshine was unavailable." : "Historical sunshine was unavailable outside the short forecast window."),
     });
     weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
     const terrainResults = [];
@@ -829,10 +900,10 @@ async function analyzeWeather() {
     state.weather.digest = buildWeatherDigest(results);
     try { localStorage.setItem(`${WEATHER_DIGEST_STORAGE_KEY}:${eclipseStorageKey()}`, JSON.stringify(state.weather.digest)); } catch { /* persistence is optional */ }
     weatherDigest.hidden = false;
-    const terrainOnlyCount = results.filter((candidate) => !candidate.weather).length;
-    weatherStatus.textContent = terrainOnlyCount
-      ? `Comparison refreshed. Cloud forecast included for ${results.length - terrainOnlyCount} of ${results.length} places; ${terrainOnlyCount} compared on terrain only.`
-      : "Comparison refreshed.";
+    const forecastCount = results.filter((candidate) => candidate.weather).length;
+    const climateCount = results.filter((candidate) => candidate.climatology).length;
+    const terrainOnlyCount = results.length - forecastCount - climateCount;
+    weatherStatus.textContent = `Comparison refreshed. ${forecastCount ? `Short-range forecast for ${forecastCount}; ` : ""}${climateCount ? `historical sunshine for ${climateCount}; ` : ""}${terrainOnlyCount ? `terrain only for ${terrainOnlyCount}; ` : ""}${results.length} place${results.length === 1 ? "" : "s"} total.`;
     button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
@@ -1015,7 +1086,8 @@ function currentCloudDistanceProfile(maxDistanceKm) {
   if (result?.debug?.samples) {
     const groups = new Map();
     for (const sample of result.debug.samples) {
-      if (sample.distanceKm > maxDistanceKm || !Number.isFinite(sample.lowTarget)) continue;
+      const lowLayerEndKm = result.weather?.geometry?.layers?.low?.toKm ?? Infinity;
+      if (sample.distanceKm > maxDistanceKm || sample.distanceKm > lowLayerEndKm || !Number.isFinite(sample.lowTarget)) continue;
       const values = groups.get(sample.distanceKm) || [];
       values.push(sample.lowTarget);
       groups.set(sample.distanceKm, values);
@@ -1603,23 +1675,26 @@ function renderSightline() {
   sightlineLayer.clearLayers();
 
   const origin = [state.observer.lat, state.observer.lng];
-  const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
-  const arrowUnderlayTip = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM + 0.7);
-  const arrowBase = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM - 4);
-  const left = destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, MAX_DISTANCE_KM);
-  const right = destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, MAX_DISTANCE_KM);
+  const corridorDistanceKm = EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm;
+  const arrowLengthKm = Math.min(4, corridorDistanceKm * 0.22);
+  const end = destinationPoint(state.observer, state.azimuth, corridorDistanceKm);
+  const arrowUnderlayTip = destinationPoint(state.observer, state.azimuth, corridorDistanceKm + Math.min(0.7, corridorDistanceKm * 0.04));
+  const arrowBaseDistanceKm = Math.max(0, corridorDistanceKm - arrowLengthKm);
+  const arrowBase = destinationPoint(state.observer, state.azimuth, arrowBaseDistanceKm);
+  const left = destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, corridorDistanceKm);
+  const right = destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, corridorDistanceKm);
 
   L.polygon([origin, left, right], { color: "#f7a928", weight: 1, opacity: 0.75, fillColor: "#ffcf4a", fillOpacity: 0.18, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, arrowBase], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
-  const arrowUnderlayLeft = destinationPoint(state.observer, state.azimuth - 0.9, MAX_DISTANCE_KM - 4.6);
-  const arrowUnderlayRight = destinationPoint(state.observer, state.azimuth + 0.9, MAX_DISTANCE_KM - 4.6);
+  const arrowUnderlayLeft = destinationPoint(state.observer, state.azimuth - 0.9, Math.max(0, arrowBaseDistanceKm - Math.min(0.6, corridorDistanceKm * 0.03)));
+  const arrowUnderlayRight = destinationPoint(state.observer, state.azimuth + 0.9, Math.max(0, arrowBaseDistanceKm - Math.min(0.6, corridorDistanceKm * 0.03)));
   L.polygon([arrowUnderlayTip, arrowUnderlayLeft, arrowUnderlayRight], { stroke: false, fillColor: "#fff", fillOpacity: 0.9, interactive: false }).addTo(sightlineLayer);
   L.polyline([origin, arrowBase], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
-  const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, MAX_DISTANCE_KM - 4);
-  const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, MAX_DISTANCE_KM - 4);
+  const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, arrowBaseDistanceKm);
+  const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, arrowBaseDistanceKm);
   L.polygon([end, arrowLeft, arrowRight], { stroke: false, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
 
-  const symbolDistanceKm = 45;
+  const symbolDistanceKm = Math.max(1, corridorDistanceKm * 0.75);
   const kind = eclipseKindName(state.eclipse?.kind);
   const symbols = [
     { point: destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, symbolDistanceKm), obscuration: 0.38, side: -1, className: "partial" },
@@ -1656,7 +1731,7 @@ function updateCalculations({ fit = false } = {}) {
   }
   if (fit) {
     map.stop();
-    const end = destinationPoint(state.observer, state.azimuth, MAX_DISTANCE_KM);
+    const end = destinationPoint(state.observer, state.azimuth, EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm);
     const sidePanelPadding = window.matchMedia("(min-width: 760px)").matches
       ? Math.ceil(panel.getBoundingClientRect().width) + 45
       : 45;
