@@ -1,5 +1,7 @@
 # Eclipse Locator
 
+For the operational snapshot, resumption checklist, deployment state and known technical debt, start with [HANDOVER.md](HANDOVER.md).
+
 A small, mobile-first map for finding the next solar eclipse visible from a chosen location and exploring the Sun's sightline. The static frontend uses Leaflet, OpenStreetMap, SunCalc, Astronomy Engine and Open-Meteo services with no frontend build step or API keys.
 
 When a selected eclipse is within the short forecast horizon and the observer is in Spain, the app also provides AEMET HARMONIE-AROME total/low/high-cloud and cloud-base overlays. The opening planning screen keeps locally saved places grouped by eclipse, with editable names and notes. Saved groups can be compared on demand: eligible Spanish locations receive cloud-wedge and terrain analysis, while locations outside AEMET coverage remain in the comparison with terrain-only results. See [WEATHER.md](WEATHER.md) for source discovery, architecture, metrics and limitations.
