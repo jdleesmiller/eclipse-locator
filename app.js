@@ -384,7 +384,7 @@ function renderSavedLocations() {
   const groups = loadSavedLocationGroups();
   const entries = Object.entries(groups)
     .filter(([, locations]) => Array.isArray(locations) && locations.length)
-    .sort(([a], [b]) => a.localeCompare(b));
+    .sort(([a], [b]) => b.localeCompare(a));
   const total = entries.reduce((sum, [, locations]) => sum + locations.length, 0);
   savedLocationsCard.hidden = total === 0;
   lastLocationButton.hidden = total > 0 || !lastLocationChoice;
@@ -1727,23 +1727,21 @@ function renderSightline() {
 
   const origin = [state.observer.lat, state.observer.lng];
   const corridorDistanceKm = EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm;
-  const arrowLengthKm = Math.min(4, corridorDistanceKm * 0.22);
+  const arrowLengthKm = Math.min(2.5, corridorDistanceKm * 0.14);
   const end = destinationPoint(state.observer, state.azimuth, corridorDistanceKm);
-  const arrowUnderlayTip = destinationPoint(state.observer, state.azimuth, corridorDistanceKm + Math.min(0.7, corridorDistanceKm * 0.04));
   const arrowBaseDistanceKm = Math.max(0, corridorDistanceKm - arrowLengthKm);
   const arrowBase = destinationPoint(state.observer, state.azimuth, arrowBaseDistanceKm);
   const left = destinationPoint(state.observer, state.azimuth - WEDGE_DEGREES, corridorDistanceKm);
   const right = destinationPoint(state.observer, state.azimuth + WEDGE_DEGREES, corridorDistanceKm);
 
   L.polygon([origin, left, right], { color: "#f7a928", weight: 1, opacity: 0.75, fillColor: "#ffcf4a", fillOpacity: 0.18, interactive: false }).addTo(sightlineLayer);
-  L.polyline([origin, arrowBase], { color: "#fff", weight: 7, opacity: 0.9, interactive: false }).addTo(sightlineLayer);
-  const arrowUnderlayLeft = destinationPoint(state.observer, state.azimuth - 0.9, Math.max(0, arrowBaseDistanceKm - Math.min(0.6, corridorDistanceKm * 0.03)));
-  const arrowUnderlayRight = destinationPoint(state.observer, state.azimuth + 0.9, Math.max(0, arrowBaseDistanceKm - Math.min(0.6, corridorDistanceKm * 0.03)));
-  L.polygon([arrowUnderlayTip, arrowUnderlayLeft, arrowUnderlayRight], { stroke: false, fillColor: "#fff", fillOpacity: 0.9, interactive: false }).addTo(sightlineLayer);
-  L.polyline([origin, arrowBase], { color: "#ed7b21", weight: 3, opacity: 1, interactive: false }).addTo(sightlineLayer);
-  const arrowLeft = destinationPoint(state.observer, state.azimuth - 0.7, arrowBaseDistanceKm);
-  const arrowRight = destinationPoint(state.observer, state.azimuth + 0.7, arrowBaseDistanceKm);
-  L.polygon([end, arrowLeft, arrowRight], { stroke: false, fillColor: "#ed7b21", fillOpacity: 1, interactive: false }).addTo(sightlineLayer);
+  const arrowHeadHalfWidthKm = Math.min(0.65, arrowLengthKm * 0.24);
+  const arrowBasePoint = { lat: arrowBase[0], lng: arrowBase[1] };
+  const arrowLeft = destinationPoint(arrowBasePoint, state.azimuth - 90, arrowHeadHalfWidthKm);
+  const arrowRight = destinationPoint(arrowBasePoint, state.azimuth + 90, arrowHeadHalfWidthKm);
+  L.polyline([origin, arrowBase], { className: "sightline-arrow-underlay", color: "#fff", weight: 7, opacity: 0.95, lineCap: "round", interactive: false }).addTo(sightlineLayer);
+  L.polygon([end, arrowLeft, arrowRight], { className: "sightline-arrow-head", color: "#fff", weight: 2, opacity: 0.95, fillColor: "#ed7b21", fillOpacity: 1, lineJoin: "round", interactive: false }).addTo(sightlineLayer);
+  L.polyline([origin, arrowBase], { className: "sightline-arrow-shaft", color: "#ed7b21", weight: 3, opacity: 1, lineCap: "round", interactive: false }).addTo(sightlineLayer);
 
   const symbolDistanceKm = Math.max(1, corridorDistanceKm * 0.75);
   const kind = eclipseKindName(state.eclipse?.kind);

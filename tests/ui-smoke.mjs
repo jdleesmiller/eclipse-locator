@@ -135,6 +135,13 @@ try {
   await page.locator("#saved-locations-card").waitFor({ state: "visible" });
   await page.screenshot({ path: "test-artifacts/opening.png", fullPage: true });
   if (await page.locator(".saved-location").count() !== 1) throw new Error("Expected the loaded location to be saved for this eclipse");
+  await page.evaluate(() => {
+    storeSavedLocationGroup("2027-08-02", [{ id: "future-test", name: "Future test place", lat: 36.5, lng: -6.25, timezone: "Europe/Madrid", eclipsePeak: "2027-08-02T08:46:00.000Z", notes: "", updatedAt: new Date().toISOString() }]);
+    renderSavedLocations();
+  });
+  const savedEventYears = await page.locator(".saved-eclipse-heading strong").allTextContents();
+  if (!savedEventYears[0]?.includes("2027") || !savedEventYears[1]?.includes("2026")) throw new Error(`Saved eclipse groups are not newest-first: ${JSON.stringify(savedEventYears)}`);
+  await page.evaluate(() => { storeSavedLocationGroup("2027-08-02", []); renderSavedLocations(); });
   if (Number.parseFloat(await page.locator(".saved-location-open").first().evaluate((element) => getComputedStyle(element).fontSize)) < 13) throw new Error("Saved location links are too small");
   if (await page.locator("#weather-legend img").count() !== 0) throw new Error("Expected the local horizontal weather legend, not a remote image");
   await page.getByRole("button", { name: /Rename/ }).first().click();
@@ -179,6 +186,10 @@ try {
   }));
   if (!cloudGeometry.lowSun.earthCurvature || cloudGeometry.lowSun.maxDistanceKm >= cloudGeometry.flatLowSun15km || cloudGeometry.lowSun.maxDistanceKm <= cloudGeometry.highSun.maxDistanceKm) throw new Error(`Cloud sightline geometry is not curvature-aware and elevation-dependent: ${JSON.stringify(cloudGeometry)}`);
   if (!(cloudGeometry.highSun.layers.low.toKm < cloudGeometry.highSun.layers.middle.toKm && cloudGeometry.highSun.layers.middle.toKm < cloudGeometry.highSun.layers.high.toKm)) throw new Error(`Cloud layers are not ordered along the sightline: ${JSON.stringify(cloudGeometry.highSun)}`);
+  const arrowRendering = await page.evaluate(() => Object.fromEntries(sightlineLayer.getLayers()
+    .filter((layer) => layer.options.className?.startsWith("sightline-arrow-"))
+    .map((layer) => [layer.options.className, { color: layer.options.color, fillColor: layer.options.fillColor, weight: layer.options.weight }])));
+  if (Object.keys(arrowRendering).length !== 3 || arrowRendering["sightline-arrow-underlay"]?.color !== "#fff" || arrowRendering["sightline-arrow-head"]?.color !== "#fff" || arrowRendering["sightline-arrow-head"]?.fillColor !== "#ed7b21" || arrowRendering["sightline-arrow-head"]?.weight !== 2 || (arrowRendering["sightline-arrow-underlay"]?.weight - arrowRendering["sightline-arrow-shaft"]?.weight) / 2 !== 2 || arrowRendering["sightline-arrow-shaft"]?.color !== "#ed7b21") throw new Error(`Sightline arrow does not use one uniformly outlined head and shaft: ${JSON.stringify(arrowRendering)}`);
   const profileRangeState = await page.evaluate(() => ({
     buttons: [...document.querySelectorAll(".profile-ranges button:not([hidden])")].map((button) => ({ label: button.textContent, range: Number(button.dataset.range) })),
     expected: EclipseWeather.cloudSightlineGeometry(state.elevation).maxDistanceKm,
