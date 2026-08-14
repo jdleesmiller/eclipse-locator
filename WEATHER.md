@@ -32,7 +32,7 @@ The WMS imagery needs no backend. Safari blocks the cross-origin JavaScript resp
 - `weather/terrain-analysis.js` — dense near-horizon sampling using public AWS Terrain Tiles (EU-DEM in Asturias).
 - `weather/solar-verification.js` — authoritative Astronomy Engine geometry plus an independent SunCalc approximation check.
 - `weather/digest.js` — JSON and Markdown digest generation.
-- `weather/climatology.js` — ERA5 near-clear direct-sun climatology client and ratings outside short-forecast coverage.
+- `weather/climatology.js` — ERA5 clear-or-nearly-clear cloud climatology client and ratings outside short-forecast coverage.
 - Browser local storage — per-eclipse viewing-location shortlist and user notes; no locale-specific candidates are built into the app.
 
 Map imagery remains direct from AEMET. A failed WMS tile is retried individually at most twice, after approximately 2 and 6 seconds with a small random jitter. The app never refreshes the whole layer in response to a tile failure and reports partial gaps to the user.
@@ -69,7 +69,7 @@ Then open `http://localhost:8080/?weatherProxy=http://localhost:8787`. The query
 
 For forecast cloud, the app analyses seven rays at offsets −5°, −3°, −1°, 0°, +1°, +3° and +5°. Corridor length comes from solar elevation, spherical-Earth curvature and nominal layer tops at 3 km (low), 8 km (middle) and 15 km (high), capped at 150 km. Numeric scoring samples AEMET low cloud over the low-layer segment, total cloud over the middle-layer segment and high cloud over the high-layer segment. Spatial values use the nearest AEMET raster cell; atmospheric refraction is excluded.
 
-The historical headline is the fraction of samples whose instantaneous direct normal irradiance (DNI) is at least 85% of an NREL-style clear-sky reference. DNI is the power in the direct solar beam on a surface perpendicular to the Sun. The reference follows the NREL-documented approximation `DNIclear = 0.688 × extraterrestrial normal irradiance`, with the Earth–Sun distance correction evaluated for each sampled date. This direct-beam adaptation is more relevant to an eclipse than the ordinary GHI clear-sky index, because it responds specifically to attenuation of the solar disc. Median total/low/middle/high cloud, total-cloud interquartile range, sample count and the 1991–2020 standard-period comparison are disclosed in details. The previous WMO 120 W/m² bright-sun metric was removed because its low threshold saturated in partly cloudy locations. This is climatology rather than a forecast, and ERA5's approximately 0.25° grid cannot resolve coastal or mountain microclimates.
+The historical headline is the fraction of samples whose ERA5 total cloud cover is no greater than one okta (⅛ of the sky, 12.5%), framed as “Clear or nearly clear on X% of comparable occasions.” Details disclose the frequency with few clouds or better (no more than two oktas / 25%), median total/low/middle/high cloud, total-cloud interquartile range, sample count and the 1991–2020 standard-period comparison. The earlier WMO 120 W/m² bright-sun metric was removed because its low threshold saturated in partly cloudy locations; an experimental DNI clear-sky ratio was also rejected because its simplified denominator was not the operational NLR method. Total cloud cover is a grid-cell fraction, not a direct probability that cloud will cover the Sun. This is climatology rather than a forecast, and ERA5's approximately 0.25° grid cannot resolve coastal or mountain microclimates.
 
 Both UTC-hour fields surrounding eclipse maximum are retained. The target estimate is a point-by-point linear interpolation using the elapsed fraction of that hour; the UI and digest label it as an approximation, not an AEMET output time.
 
@@ -90,7 +90,7 @@ Astronomy Engine 2.1.19 is authoritative throughout the map, AR, weather wedges 
 
 ## Limitations and next steps
 
-- The AEMET cloud UI is shown only for observers in the approximate mainland-Spain/Balearic bounding box and eclipses from three hours ago through 72 hours ahead. ERA5 historical direct-sun climatology and terrain are global fallbacks.
+- The AEMET cloud UI is shown only for observers in the approximate mainland-Spain/Balearic bounding box and eclipses from three hours ago through 72 hours ahead. ERA5 historical cloud climatology and terrain are global fallbacks.
 - The WMS does not expose the model initialization time, so genuine run-to-run comparison cannot be identified reliably yet.
 - Cloud-base is available as a visual overlay, but line-of-sight/cloud-base intersection metrics are not included.
 - Linear time interpolation smooths percentages but cannot predict cloud advection or formation between model hours.
@@ -106,5 +106,5 @@ The proxy accepts the advertised AEMET Iberian layer domain but rejects comparis
 - [AEMET HARMONIE-AROME data-download help](https://www.aemet.es/en/eltiempo/prediccion/modelosnumericos/harmonie_arome/ayuda)
 - [AEMET OpenData FAQ](https://opendata.aemet.es/centrodedescargas/docs/FAQs130917.pdf)
 - [AWS Open Data Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
-- [NREL Best Practices Handbook for solar-radiation measurements](https://www.nrel.gov/docs/fy24osti/88300.pdf)
+- [WMO okta definitions](https://worldweather.wmo.int/oktas.htm)
 - [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)

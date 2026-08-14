@@ -597,7 +597,7 @@ function renderSightlineTechnical() {
       ? `<div><span>Forecast cloud by layer</span><b>${forecast.layers.low.wedgeMean} / ${forecast.layers.middle.wedgeMean} / ${forecast.layers.high.wedgeMean}%</b><small>Low / middle / high means along their corresponding sightline segments.</small></div>`
       : `<div><span>Forecast cloud by layer</span><b>Not loaded</b><small>Open Sightline profile to load numeric low/middle/high corridor values.</small></div>`
     : climate
-      ? `<div><span>Historical cloud at ERA5 cell</span><b>${climate.medianLowCloudPct} / ${climate.medianMidCloudPct} / ${climate.medianHighCloudPct}%</b><small>Median low / middle / high cloud; ${climate.nearClearDirectSunPct}% near-clear direct sun in ${climate.period.startYear}–${climate.period.endYear}.</small></div>`
+      ? `<div><span>Historical cloud at ERA5 cell</span><b>${climate.medianLowCloudPct} / ${climate.medianMidCloudPct} / ${climate.medianHighCloudPct}%</b><small>Median low / middle / high cloud; clear or nearly clear on ${climate.clearOrNearlyClearPct}% of comparable occasions.</small></div>`
       : `<div><span>Historical cloud</span><b>Loading…</b><small>ERA5 eclipse-time climatology for this location.</small></div>`;
   sightlineTechnical.innerHTML = `<div><span>Cloud sightline reach</span><b>${formatDistanceKm(geometry.maxDistanceKm)} km</b><small>Curvature-aware distance to the nominal 15 km high-cloud top at ${state.elevation.toFixed(1)}° solar elevation.</small></div>
     <div><span>Layer ground ranges</span><b>0–${formatDistanceKm(layers.low.toKm)} / ${formatDistanceKm(layers.middle.fromKm)}–${formatDistanceKm(layers.middle.toKm)} / ${formatDistanceKm(layers.high.fromKm)}–${formatDistanceKm(layers.high.toKm)} km</b><small>Low 0–3 km / middle 3–8 km / high 8–15 km altitude layers.</small></div>
@@ -719,21 +719,21 @@ async function updateCloudIndicator() {
 }
 
 function renderClimateIndicator(climatology) {
-  const classification = climatology.nearClearDirectSunPct >= 70 ? "clear" : climatology.nearClearDirectSunPct >= 40 ? "concerning" : "blocked";
-  const label = EclipseWeather.climatologyRating(climatology.nearClearDirectSunPct);
+  const classification = climatology.clearOrNearlyClearPct >= 60 ? "clear" : climatology.clearOrNearlyClearPct >= 30 ? "concerning" : "blocked";
+  const label = EclipseWeather.climatologyRating(climatology.clearOrNearlyClearPct);
   climateResult.className = `result-badge ${classification}`;
-  climateResult.textContent = `${label[0].toUpperCase()}${label.slice(1)} · ${climatology.nearClearDirectSunPct}%`;
-  climateHeadline.innerHTML = `Near-clear direct sunlight occurred in <strong>${climatology.nearClearDirectSunPct}%</strong> of comparable observations in the recent planning period.`;
+  climateResult.textContent = `${label[0].toUpperCase()}${label.slice(1)} · ${climatology.clearOrNearlyClearPct}%`;
+  climateHeadline.innerHTML = `Clear or nearly clear on <strong>${climatology.clearOrNearlyClearPct}%</strong> of comparable occasions in the recent planning period.`;
   climateSummary.textContent = `${climatology.period.startYear}–${climatology.period.endYear} planning period · ±${climatology.dateWindowDays} days · eclipse-time hour · ${climatology.sampleCount} samples`;
   climateDetailContent.innerHTML = `<div class="climate-detail-grid">
-    <span>Recent planning period (${climatology.period.startYear}–${climatology.period.endYear})</span><b>${climatology.nearClearDirectSunPct}% near-clear direct sun</b>
-    <span>WMO standard normal (${climatology.standardNormal?.period?.startYear ?? 1991}–${climatology.standardNormal?.period?.endYear ?? 2020})</span><b>${climatology.standardNormal?.nearClearDirectSunPct ?? "—"}% near-clear direct sun</b>
-    <span>Below near-clear threshold</span><b>${climatology.belowNearClearDirectSunPct}%</b>
-    <span>Median direct-beam clear-sky ratio</span><b>${climatology.medianDirectBeamClearSkyRatioPct}%</b>
+    <span>Recent planning period (${climatology.period.startYear}–${climatology.period.endYear})</span><b>${climatology.clearOrNearlyClearPct}% clear or nearly clear</b>
+    <span>WMO standard normal (${climatology.standardNormal?.period?.startYear ?? 1991}–${climatology.standardNormal?.period?.endYear ?? 2020})</span><b>${climatology.standardNormal?.clearOrNearlyClearPct ?? "—"}% clear or nearly clear</b>
+    <span>Few clouds or better (≤${climatology.clearOrFewCloudsThresholdPct}% cloud)</span><b>${climatology.clearOrFewCloudsPct}%</b>
+    <span>More than one okta of cloud</span><b>${climatology.moreThanOneOktaPct}%</b>
     <span>Median total cloud</span><b>${climatology.medianCloudCoverPct}%</b>
     <span>Total-cloud middle 50%</span><b>${climatology.cloudCoverP25Pct}–${climatology.cloudCoverP75Pct}%</b>
     <span>Median low / middle / high cloud</span><b>${climatology.medianLowCloudPct} / ${climatology.medianMidCloudPct} / ${climatology.medianHighCloudPct}%</b>
-  </div><p>“Near-clear direct sun” means direct normal irradiance (DNI—the direct solar beam on a surface perpendicular to the Sun) was at least ${Math.round(climatology.clearSkyRatioThreshold * 100)}% of an NREL-style clear-sky reference. This is historical context, not a forecast. ERA5 grid resolution is approximately 25 km.</p>`;
+  </div><p>“Clear or nearly clear” means ERA5 total cloud cover was no more than one okta (⅛ of the sky, ${climatology.clearOrNearlyClearThresholdPct}%). Cloud may not be uniformly distributed within the grid cell, so this is historical context rather than a probability that the Sun will be unobscured. ERA5 grid resolution is approximately 25 km.</p>`;
   renderSightlineTechnical();
 }
 
@@ -756,7 +756,7 @@ async function updateClimateIndicator() {
     if (request !== state.weather.climateRequest) return;
     climateResult.className = "result-badge";
     climateResult.textContent = "Unavailable";
-    climateHeadline.textContent = "Historical direct-sun conditions could not be loaded.";
+    climateHeadline.textContent = "Historical cloud conditions could not be loaded.";
     climateSummary.textContent = error.message;
   }
 }
@@ -808,10 +808,10 @@ function renderWeatherResults(results) {
     } else if (result.climatology) {
       const climate = result.climatology;
       item.classList.add("climatology-result");
-      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.climateRating} historical outlook (${climate.nearClearDirectSunPct}% near-clear direct sun) · ${terrain.classification} terrain</span></button>
-        <small><b>Historical outlook:</b> near-clear direct sun in ${climate.nearClearDirectSunPct}% of comparable observations · below threshold ${climate.belowNearClearDirectSunPct}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
+      item.innerHTML = `<button class="weather-result-main" type="button"><strong>${safePlaceLabel}</strong><b class="weather-score">${result.overall.recommendation}</b><span>${result.climateRating} historical outlook (${climate.clearOrNearlyClearPct}% clear or nearly clear) · ${terrain.classification} terrain</span></button>
+        <small><b>Historical outlook:</b> clear or nearly clear on ${climate.clearOrNearlyClearPct}% of comparable occasions · more than one okta ${climate.moreThanOneOktaPct}%<br><b>Terrain:</b> ±0.5° horizon ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km · Sun ${terrain.sunElevationDeg}° · clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°</small>
         ${notesDetail}
-        <details><summary>Historical direct-sun details</summary><p>${climate.period.startYear}–${climate.period.endYear} · ±${climate.dateWindowDays} days · eclipse-time hour · ${climate.sampleCount} samples.</p><p><b>Total cloud</b> median ${climate.medianCloudCoverPct}%, middle 50% ${climate.cloudCoverP25Pct}–${climate.cloudCoverP75Pct}%. <b>Median low / middle / high cloud</b> ${climate.medianLowCloudPct}/${climate.medianMidCloudPct}/${climate.medianHighCloudPct}%.</p><p><b>1991–2020 standard normal:</b> ${climate.standardNormal?.nearClearDirectSunPct ?? "—"}% near-clear direct sun (${climate.standardNormal?.sampleCount ?? "—"} samples).</p><p>Near-clear requires DNI to reach at least ${Math.round(climate.clearSkyRatioThreshold * 100)}% of an NREL-style clear-sky reference. Historical context is not a forecast.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
+        <details><summary>Historical cloud details</summary><p>${climate.period.startYear}–${climate.period.endYear} · ±${climate.dateWindowDays} days · eclipse-time hour · ${climate.sampleCount} samples.</p><p><b>Clear or nearly clear (≤${climate.clearOrNearlyClearThresholdPct}% cloud)</b> ${climate.clearOrNearlyClearPct}%. <b>Few clouds or better (≤${climate.clearOrFewCloudsThresholdPct}% cloud)</b> ${climate.clearOrFewCloudsPct}%.</p><p><b>Total cloud</b> median ${climate.medianCloudCoverPct}%, middle 50% ${climate.cloudCoverP25Pct}–${climate.cloudCoverP75Pct}%. <b>Median low / middle / high cloud</b> ${climate.medianLowCloudPct}/${climate.medianMidCloudPct}/${climate.medianHighCloudPct}%.</p><p><b>1991–2020 standard normal:</b> ${climate.standardNormal?.clearOrNearlyClearPct ?? "—"}% clear or nearly clear (${climate.standardNormal?.sampleCount ?? "—"} samples).</p><p>The headline threshold is the WMO one-okta boundary. Historical context is not a forecast or a direct probability that the Sun will be unobscured.</p><p><b>Terrain horizons</b> centre ${terrain.centreRayHorizonDeg}° · ±0.25° max ${terrain.within025DegMaxAngleDeg}° · ±0.5° max ${terrain.within05DegMaxAngleDeg}° (used for classification) · ±5° max ${terrain.contextWedgeMaxAngleDeg}° (context only).</p></details>
         <details class="weather-debug-detail" ${state.weather.debug ? "" : "hidden"}><summary>Debug samples (${terrain.debugSamples.length} terrain)</summary><pre>${state.weather.debug ? JSON.stringify({ climatology: climate, terrain: terrain.debugSamples }, null, 2) : ""}</pre></details>`;
     } else {
       item.classList.add("terrain-only-result");
@@ -857,7 +857,7 @@ function buildWeatherDigest(results) {
         "Target-time values are linearly interpolated approximations between the surrounding hourly AEMET grids.",
         "Model initialization time is not exposed by AEMET's public services.",
       ] : []),
-      "Historical near-clear direct-sun frequency uses ERA5 direct normal irradiance relative to an NREL-style clear-sky reference; it is climatology, not a forecast.",
+      "Historical clear-or-nearly-clear frequency uses the WMO one-okta threshold (ERA5 total cloud cover ≤12.5%); it is climatology, not a forecast or a direct probability of an unobscured Sun.",
       "Cloud values use nearest model raster cells; terrain excludes buildings, trees and atmospheric refraction.",
     ],
   });
@@ -916,12 +916,12 @@ async function analyzeWeather() {
     const fallbackCandidates = preparedCandidates.filter((candidate) => !cloudById.has(candidate.id));
     const climateById = new Map();
     if (fallbackCandidates.length) {
-      weatherStatus.textContent = `Loading historical near-clear direct-sun frequencies for ${fallbackCandidates.length} place${fallbackCandidates.length === 1 ? "" : "s"}…`;
+      weatherStatus.textContent = `Loading historical clear-or-nearly-clear frequencies for ${fallbackCandidates.length} place${fallbackCandidates.length === 1 ? "" : "s"}…`;
       try {
         const climateResults = await EclipseWeather.climatologyCandidates(fallbackCandidates, state.viewingDate);
         climateResults.forEach((candidate) => climateById.set(candidate.id, candidate));
       } catch (error) {
-        fallbackCandidates.forEach((candidate) => cloudFailures.set(candidate.id, `Historical direct-sun analysis failed: ${error.message}`));
+        fallbackCandidates.forEach((candidate) => cloudFailures.set(candidate.id, `Historical cloud analysis failed: ${error.message}`));
       }
     }
     const terrainCandidates = preparedCandidates.map((candidate) => cloudById.get(candidate.id) || climateById.get(candidate.id) || {
@@ -931,7 +931,7 @@ async function analyzeWeather() {
       score: null,
       debug: { samples: [] },
       cloudUnavailableReason: cloudFailures.get(candidate.id)
-        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area and historical direct-sun history was unavailable." : "Historical direct-sun history was unavailable outside the short forecast window."),
+        || (weatherTimeApplies() ? "This location is outside the AEMET forecast area and historical cloud data was unavailable." : "Historical cloud data was unavailable outside the short forecast window."),
     });
     weatherStatus.textContent = "Sampling the terrain-tile horizon, with 100 m spacing through the first 2 km…";
     const terrainResults = [];
@@ -951,7 +951,7 @@ async function analyzeWeather() {
     const forecastCount = results.filter((candidate) => candidate.weather).length;
     const climateCount = results.filter((candidate) => candidate.climatology).length;
     const terrainOnlyCount = results.length - forecastCount - climateCount;
-    weatherStatus.textContent = `Comparison refreshed. ${forecastCount ? `Short-range forecast for ${forecastCount}; ` : ""}${climateCount ? `historical direct sun for ${climateCount}; ` : ""}${terrainOnlyCount ? `terrain only for ${terrainOnlyCount}; ` : ""}${results.length} place${results.length === 1 ? "" : "s"} total.`;
+    weatherStatus.textContent = `Comparison refreshed. ${forecastCount ? `Short-range forecast for ${forecastCount}; ` : ""}${climateCount ? `historical cloud for ${climateCount}; ` : ""}${terrainOnlyCount ? `terrain only for ${terrainOnlyCount}; ` : ""}${results.length} place${results.length === 1 ? "" : "s"} total.`;
     button.textContent = "Refresh comparison";
   } catch (error) {
     weatherStatus.textContent = `Site comparison unavailable: ${error.message}. The map overlay may still work.`;
