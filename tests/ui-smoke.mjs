@@ -199,7 +199,7 @@ try {
   const [testClimatology] = await page.evaluate(() => EclipseWeather.climatologyCandidates([{ id: "test", lat: 36.72, lng: -3 }], "2027-08-02T10:00:00.000Z"));
   if (testClimatology.climatology.sampleCount !== 725 || !Number.isFinite(testClimatology.climatology.clearOrNearlyClearPct) || testClimatology.climatology.clearOrNearlyClearThresholdPct !== 12.5) throw new Error(`Historical cloud fixture is incomplete: ${JSON.stringify(testClimatology)}`);
   await page.evaluate((climatology) => { renderClimateIndicator(climatology); climateCard.hidden = false; }, testClimatology.climatology);
-  if (!await page.locator("#climate-headline").filter({ hasText: "Clear or nearly clear on" }).isVisible() || !/WMO standard normal \(1991–2020\)/.test(await page.locator("#climate-detail-content").textContent())) throw new Error("Historical outlook progressive disclosure is incomplete");
+  if (!await page.locator("#climate-card h2").filter({ hasText: "Historical cloud cover" }).isVisible() || !await page.locator("#climate-headline").filter({ hasText: "Clear or nearly clear on" }).isVisible() || !/WMO standard normal \(1991–2020\)/.test(await page.locator("#climate-detail-content").textContent())) throw new Error("Historical cloud cover progressive disclosure is incomplete");
   await page.evaluate(() => { climateCard.hidden = true; });
   if (await page.locator("#phase-technical > div").count() !== 5) throw new Error("Expected detailed total-eclipse phases under technical details");
   await page.evaluate(() => {

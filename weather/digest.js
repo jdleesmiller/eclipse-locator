@@ -127,7 +127,7 @@
           const target = candidate.weather.target;
           return [`Weather: ${candidate.overall.weatherRating}; low cloud here ${target.lowCloudAtObserverPct}%, wedge mean 10/25/50 km ${target.low.km10.wedgeMean}/${target.low.km25.wedgeMean}/${target.low.km50.wedgeMean}% (p75 ${target.low.km10.wedgeP75}/${target.low.km25.wedgeP75}/${target.low.km50.wedgeP75}%).`];
         })() : candidate.climatology
-          ? [`Historical outlook: clear or nearly clear on ${candidate.climatology.clearOrNearlyClearPct}% of comparable occasions (${candidate.climatology.period.startYear}–${candidate.climatology.period.endYear}, ±${candidate.climatology.dateWindowDays} days, ${candidate.climatology.sampleCount} samples); median total cloud ${candidate.climatology.medianCloudCoverPct}%.`]
+          ? [`Historical cloud cover: clear or nearly clear on ${candidate.climatology.clearOrNearlyClearPct}% of comparable occasions (${candidate.climatology.period.startYear}–${candidate.climatology.period.endYear}, ±${candidate.climatology.dateWindowDays} days, ${candidate.climatology.sampleCount} samples); median total cloud ${candidate.climatology.medianCloudCoverPct}%.`]
           : [`Weather: unavailable (${candidate.cloudUnavailableReason || "outside the available forecast coverage"}).`]),
         `Terrain: ${terrain.classification}; centre ${terrain.centreRayHorizonDeg}°, ±0.25° max ${terrain.within025DegMaxAngleDeg}°, ±0.5° max ${terrain.within05DegMaxAngleDeg}° at ${terrain.within05DegMaxDistanceKm} km, Sun ${terrain.sunElevationDeg}°, clearance ${terrain.clearanceDeg >= 0 ? "+" : ""}${terrain.clearanceDeg}°; ±5° context ${terrain.contextWedgeMaxAngleDeg}°.`,
         `Trend: ${candidate.trend.classification}. Overall: ${candidate.overall.recommendation}.`, "",
